@@ -3,295 +3,457 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Mini-LIMS · 微生物实验室数字孪生 MVP</title>
+<title>Mini-LIMS v3 · 微生物实验室数字孪生</title>
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#e6edf3;font-family:'PingFang SC','Microsoft YaHei',sans-serif;overflow:hidden}
-::-webkit-scrollbar{width:6px}
+body{background:#0a0d14;color:#e6edf3;font-family:'PingFang SC','Microsoft YaHei',sans-serif;overflow:hidden}
+::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:#161b22}
 ::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
-@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
+@keyframes pulseRing{0%{r:7;opacity:0.9}100%{r:16;opacity:0}}
+@keyframes flowDash{to{stroke-dashoffset:-16}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 .blink{animation:blink 1.1s infinite}
-.pulse-dot{animation:pulse 1.1s infinite}
+.flow-line{stroke-dasharray:6,4;animation:flowDash 0.8s linear infinite}
 .log-item{animation:fadeIn 0.3s ease}
-.room-rect{transition:fill 0.4s,stroke 0.4s;cursor:pointer}
-.pb-node{cursor:pointer}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useCallback, useMemo } = React;
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
 /* ══════════════════════════════════════════════════════════════
-   模拟数据引擎（替代 WebSocket 后端）
+   图纸坐标系
+   真实图纸：横向 20m（5m洁净 + 7m培养 + 8m理化）
+             纵向 约11m（含更衣走廊）
+   SVG viewBox: 0 0 1060 620
+   换算：1m ≈ 48px(X)，1m ≈ 50px(Y)，原点(12,12)
 ══════════════════════════════════════════════════════════════ */
-function createInitialState() {
+const PX = 48, PY = 50, OX = 12, OY = 12;
+const gx = m => OX + m * PX;
+const gy = m => OY + m * PY;
+const gw = m => m * PX;
+const gh = m => m * PY;
+
+/* ══════════════════════════════════════════════════════════════
+   初始状态
+══════════════════════════════════════════════════════════════ */
+let _sc = 1;
+function createState() {
   return {
-    rooms: [
-      {id:'sterile',   name:'无菌室',         pressure:-15.0, temp:22.0, humidity:45.0, status:'normal'},
-      {id:'yangxing',  name:'阳性对照操作室', pressure:-12.0, temp:22.0, humidity:45.0, status:'normal'},
-      {id:'microbio',  name:'微生物操作室',   pressure:-10.0, temp:22.0, humidity:45.0, status:'normal'},
-      {id:'buffer1',   name:'缓冲间①',        pressure:-5.0,  temp:23.0, humidity:50.0, status:'normal'},
-      {id:'buffer2',   name:'缓冲间②',        pressure:-5.0,  temp:23.0, humidity:50.0, status:'normal'},
-      {id:'culture',   name:'培养区',          pressure:0.0,   temp:37.0, humidity:60.0, status:'normal'},
-      {id:'sterilize', name:'灭菌区',          pressure:0.0,   temp:25.0, humidity:50.0, status:'normal'},
-      {id:'chemistry', name:'理化实验室',      pressure:0.0,   temp:24.0, humidity:55.0, status:'normal'},
+    rooms:[
+      // 洁净区（X: 0~5m）
+      {id:'sterile',  name:'无菌室',         zone:'clean', pressure:-15.0,temp:22.0,humidity:45.0,noise:38,status:'normal',bsl:'BSL-2',grade:'万级 ISO 7'},
+      {id:'yangxing', name:'阳性对照操作室', zone:'clean', pressure:-12.0,temp:22.0,humidity:45.0,noise:40,status:'normal',bsl:'BSL-2',grade:'万级 ISO 7'},
+      {id:'microbio', name:'微生物操作室',   zone:'clean', pressure:-10.0,temp:22.0,humidity:45.0,noise:42,status:'normal',bsl:'BSL-1',grade:'万级 ISO 7'},
+      {id:'buf1',     name:'缓冲间①',        zone:'buffer',pressure:-5.0, temp:23.0,humidity:50.0,noise:35,status:'normal',bsl:'—',   grade:'—'},
+      {id:'buf2',     name:'缓冲间②',        zone:'buffer',pressure:-5.0, temp:23.0,humidity:50.0,noise:35,status:'normal',bsl:'—',   grade:'—'},
+      {id:'change1',  name:'一更',            zone:'change',pressure:0.0,  temp:24.0,humidity:55.0,noise:40,status:'normal',bsl:'—',   grade:'—'},
+      {id:'change2',  name:'二更',            zone:'change',pressure:-2.0, temp:23.5,humidity:52.0,noise:38,status:'normal',bsl:'—',   grade:'—'},
+      // 培养区（X: 5~12m）
+      {id:'culture',  name:'培养区',          zone:'support',pressure:0.0, temp:37.0,humidity:60.0,noise:45,status:'normal',bsl:'—',   grade:'普通'},
+      {id:'hvac',     name:'空调过滤器房',    zone:'support',pressure:2.0, temp:20.0,humidity:40.0,noise:58,status:'normal',bsl:'—',   grade:'—'},
+      // 理化/灭菌区（X: 12~20m）
+      {id:'chem',     name:'理化实验室',      zone:'support',pressure:0.0, temp:24.0,humidity:55.0,noise:48,status:'normal',bsl:'—',   grade:'普通'},
+      {id:'steril',   name:'灭菌区',          zone:'support',pressure:0.0, temp:25.0,humidity:50.0,noise:52,status:'normal',bsl:'—',   grade:'—'},
     ],
-    passboxes: [
-      {id:'pb1', name:'传递窗①', status:'idle', sample:null, from:'缓冲间①', to:'无菌室',         updated_at:null},
-      {id:'pb2', name:'传递窗②', status:'idle', sample:null, from:'缓冲间②', to:'阳性对照操作室', updated_at:null},
-      {id:'pb3', name:'传递窗③', status:'idle', sample:null, from:'缓冲间',   to:'微生物操作室',   updated_at:null},
+    passboxes:[
+      {id:'pb1',name:'传递窗①',status:'idle',sample:null,from:'缓冲间①',to:'无菌室',       updated_at:null},
+      {id:'pb2',name:'传递窗②',status:'idle',sample:null,from:'缓冲间②',to:'阳性对照操作室',updated_at:null},
+      {id:'pb3',name:'传递窗③',status:'idle',sample:null,from:'缓冲间',  to:'微生物操作室', updated_at:null},
     ],
-    incubators: [
-      {id:'inc1', name:'培养箱①', temp:37.0, setpoint:37.0, status:'running'},
-      {id:'inc2', name:'培养箱②', temp:37.0, setpoint:37.0, status:'running'},
-      {id:'inc3', name:'培养箱③', temp:37.0, setpoint:37.0, status:'running'},
-      {id:'inc4', name:'培养箱④', temp:37.0, setpoint:37.0, status:'idle'},
+    incubators:[
+      {id:'inc1',name:'培养箱①',temp:37.0,setpoint:37.0,status:'running'},
+      {id:'inc2',name:'培养箱②',temp:37.0,setpoint:37.0,status:'running'},
+      {id:'inc3',name:'培养箱③',temp:37.0,setpoint:37.0,status:'running'},
+      {id:'inc4',name:'培养箱④',temp:37.0,setpoint:37.0,status:'idle'},
     ],
-    autoclave: {id:'autoclave1', name:'灭菌锅①', status:'idle', countdown:0, temp:25.0, cycle_total:0},
-    sample_log: [],
-    ts: new Date().toISOString(),
+    autoclaves:[
+      {id:'ac1',name:'灭菌锅①',status:'idle',countdown:0,temp:25.0,cycles:0},
+      {id:'ac2',name:'灭菌锅②',status:'idle',countdown:0,temp:25.0,cycles:0},
+    ],
+    sample_log:[],
+    ts:new Date().toISOString(),
   };
 }
 
-let _sampleCounter = 1;
-let _tickCount = 0;
+const BASE_P = {sterile:-15,yangxing:-12,microbio:-10,buf1:-5,buf2:-5,change1:0,change2:-2,culture:0,hvac:2,chem:0,steril:0};
 
-function simulateTick(state) {
-  _tickCount++;
-  const t = Date.now() / 1000;
-  const newState = JSON.parse(JSON.stringify(state));
-
-  // 房间传感器模拟
-  const basePressure = {sterile:-15,yangxing:-12,microbio:-10,buffer1:-5,buffer2:-5,culture:0,sterilize:0,chemistry:0};
-  newState.rooms = newState.rooms.map(room => {
-    const base = basePressure[room.id] || 0;
-    const noise = Math.sin(t * 0.3 + room.id.charCodeAt(0)) * 1.5 + (Math.random()-0.5)*0.6;
-    const pressure = Math.round((base + noise)*10)/10;
-    const temp = Math.round((room.temp + (Math.random()-0.5)*0.1)*10)/10;
-    const humidity = Math.min(80, Math.max(30, Math.round((room.humidity + (Math.random()-0.5)*0.2)*10)/10));
-    let status = 'normal';
-    if (['sterile','yangxing','microbio'].includes(room.id)) {
-      if (pressure > -5) status = 'alarm';
-      else if (pressure > -8) status = 'warning';
+function tick(s) {
+  const t = Date.now()/1000;
+  const n = JSON.parse(JSON.stringify(s));
+  n.rooms = n.rooms.map(r=>{
+    const base = BASE_P[r.id]||0;
+    const noise = Math.sin(t*0.28+r.id.charCodeAt(0)*0.6)*1.9+(Math.random()-.5)*.5;
+    const pressure = Math.round((base+noise)*10)/10;
+    const temp = Math.round((r.temp+(Math.random()-.5)*.08)*10)/10;
+    const humidity = Math.min(80,Math.max(30,Math.round((r.humidity+(Math.random()-.5)*.15)*10)/10));
+    const noise_db = Math.round((r.noise+(Math.random()-.5)*2)*10)/10;
+    let status='normal';
+    if(['sterile','yangxing','microbio'].includes(r.id)){
+      if(pressure>-5) status='alarm';
+      else if(pressure>-8) status='warning';
     }
-    return {...room, pressure, temp, humidity, status};
+    return {...r,pressure,temp,humidity,noise:noise_db,status};
   });
-
-  // 培养箱
-  newState.incubators = newState.incubators.map(inc => {
-    if (inc.status === 'idle') return inc;
-    const temp = Math.round((inc.setpoint + Math.sin(t*0.2 + inc.id.charCodeAt(0))*0.3 + (Math.random()-0.5)*0.1)*10)/10;
-    const status = Math.abs(temp - inc.setpoint) > 1.5 ? 'alarm' : 'running';
-    return {...inc, temp, status};
+  n.incubators = n.incubators.map(i=>{
+    if(i.status==='idle') return i;
+    const temp=Math.round((i.setpoint+Math.sin(t*.18+i.id.charCodeAt(0))*.35+(Math.random()-.5)*.1)*10)/10;
+    return {...i,temp,status:Math.abs(temp-i.setpoint)>1.5?'alarm':'running'};
   });
-
-  // 灭菌锅
-  const ac = newState.autoclave;
-  if (ac.status === 'running' && ac.countdown > 0) {
-    ac.countdown -= 1;
-    ac.temp = Math.round((121 + (Math.random()-0.5)*0.5)*10)/10;
-    if (ac.countdown <= 0) { ac.status = 'cooling'; ac.countdown = 20; }
-  } else if (ac.status === 'cooling' && ac.countdown > 0) {
-    ac.countdown -= 1;
-    ac.temp = Math.round(Math.max(25, ac.temp - 3 + (Math.random()-0.5)*0.3)*10)/10;
-    if (ac.countdown <= 0) { ac.status = 'done'; ac.temp = 25.0; ac.cycle_total += 1; }
-  }
-
-  newState.ts = new Date().toISOString();
-  return newState;
+  n.autoclaves = n.autoclaves.map(ac=>{
+    if(ac.status==='running'&&ac.countdown>0){
+      const cd=ac.countdown-1;
+      const temp=Math.round((121+(Math.random()-.5)*.4)*10)/10;
+      return {...ac,countdown:cd,temp,status:cd<=0?'cooling':ac.status,...(cd<=0?{countdown:20}:{})};
+    } else if(ac.status==='cooling'&&ac.countdown>0){
+      const cd=ac.countdown-1;
+      const temp=Math.round(Math.max(25,ac.temp-3.5+(Math.random()-.5)*.3)*10)/10;
+      return {...ac,countdown:cd,temp,...(cd<=0?{status:'done',temp:25.0,cycles:ac.cycles+1}:{})};
+    }
+    return ac;
+  });
+  n.ts=new Date().toISOString();
+  return n;
 }
 
 /* ══════════════════════════════════════════════════════════════
-   颜色 & 常量
+   颜色系统
 ══════════════════════════════════════════════════════════════ */
-const STATUS_COLOR = {
-  normal:  {fill:'#0d2b1a', stroke:'#22c55e', label:'#4ade80'},
-  warning: {fill:'#2b1f00', stroke:'#f59e0b', label:'#fbbf24'},
-  alarm:   {fill:'#2b0a0a', stroke:'#ef4444', label:'#f87171'},
+const ZONE_C = {
+  clean:  {bg:'#071a0f',border:'#22c55e',bw:2,  lc:'#4ade80'},
+  buffer: {bg:'#0a1628',border:'#3b82f6',bw:1.5,lc:'#60a5fa'},
+  change: {bg:'#12102a',border:'#6366f1',bw:1.5,lc:'#818cf8'},
+  support:{bg:'#0f1520',border:'#374151',bw:1.5,lc:'#6b7280'},
 };
-const PB_COLOR = {
-  idle:         {fill:'#1e293b', stroke:'#64748b', dot:'#64748b'},
-  transferring: {fill:'#1c2a1c', stroke:'#22c55e', dot:'#22c55e'},
-  disinfecting: {fill:'#2b1f00', stroke:'#f59e0b', dot:'#f59e0b'},
-  done:         {fill:'#0d2b1a', stroke:'#4ade80', dot:'#4ade80'},
+const ALARM_C = {
+  alarm:  {bg:'#2b0a0a',border:'#ef4444',lc:'#f87171'},
+  warning:{bg:'#2b1f00',border:'#f59e0b',lc:'#fbbf24'},
 };
-const PB_LABEL = {idle:'空闲', transferring:'传递中', disinfecting:'消毒中', done:'完成'};
-const INC_STATUS_COLOR = {idle:'#475569', running:'#22c55e', alarm:'#ef4444'};
-const AC_STATUS_COLOR  = {idle:'#475569', running:'#f59e0b', cooling:'#60a5fa', done:'#4ade80'};
+const PB_C = {
+  idle:        {bg:'#1e293b',border:'#475569',dot:'#64748b'},
+  transferring:{bg:'#0d2b1a',border:'#22c55e',dot:'#22c55e'},
+  disinfecting:{bg:'#2b1f00',border:'#f59e0b',dot:'#f59e0b'},
+  done:        {bg:'#0d2b1a',border:'#4ade80',dot:'#4ade80'},
+};
+const PB_LBL = {idle:'空闲',transferring:'传递中',disinfecting:'消毒中',done:'完成'};
+const INC_C = {idle:'#475569',running:'#22c55e',alarm:'#ef4444'};
+const AC_C  = {idle:'#475569',running:'#f59e0b',cooling:'#60a5fa',done:'#4ade80'};
+
+/* ══════════════════════════════════════════════════════════════
+   布局定义（严格按图纸比例）
+   图纸分区：
+     X 0~5m   洁净区（无菌室/阳性对照/微生物/缓冲间/更衣）
+     X 5~12m  培养区（培养箱×4 + 冰箱 + 空调过滤器房）
+     X 12~20m 理化/灭菌区（通风橱+边台+中央台+灭菌锅×2）
+     Y 0~3m   上半（无菌室 / 培养箱上排 / 理化上半）
+     Y 3~6.2m 中段（阳性对照 / 培养箱下排 / 理化下半）
+     Y 6.2~9.2m 下段（微生物操作室 / 灭菌区）
+     Y 9.2~11m  更衣走廊
+══════════════════════════════════════════════════════════════ */
+
+// 房间 [id, xm, ym, wm, hm]
+const RDEFS = [
+  {id:'sterile',  xm:0,   ym:0,   wm:3.0, hm:3.0},
+  {id:'yangxing', xm:0,   ym:3.0, wm:3.0, hm:3.2},
+  {id:'microbio', xm:0,   ym:6.2, wm:3.0, hm:3.0},
+  {id:'buf1',     xm:3.0, ym:0,   wm:2.0, hm:3.0},
+  {id:'buf2',     xm:3.0, ym:3.0, wm:2.0, hm:3.2},
+  {id:'change1',  xm:0,   ym:9.2, wm:2.5, hm:1.8},
+  {id:'change2',  xm:2.5, ym:9.2, wm:2.5, hm:1.8},
+  {id:'culture',  xm:5.0, ym:0,   wm:7.0, hm:7.5},
+  {id:'hvac',     xm:5.0, ym:7.5, wm:7.0, hm:3.5},
+  {id:'chem',     xm:12.0,ym:0,   wm:8.0, hm:6.5},
+  {id:'steril',   xm:12.0,ym:6.5, wm:8.0, hm:4.5},
+];
+
+// 传递窗 [id, xm, ym]（位于缓冲间与洁净室交界处）
+const PBDEFS = [
+  {id:'pb1',xm:3.0,ym:1.5,from:'缓冲间①',to:'无菌室'},
+  {id:'pb2',xm:3.0,ym:4.6,from:'缓冲间②',to:'阳性对照操作室'},
+  {id:'pb3',xm:3.0,ym:7.7,from:'缓冲间',  to:'微生物操作室'},
+];
+
+// 培养箱 [id, xm, ym, wm, hm]
+const INCDEFS = [
+  {id:'inc1',xm:5.3,ym:0.3,wm:2.8,hm:1.5},
+  {id:'inc2',xm:8.3,ym:0.3,wm:2.8,hm:1.5},
+  {id:'inc3',xm:5.3,ym:2.1,wm:2.8,hm:1.5},
+  {id:'inc4',xm:8.3,ym:2.1,wm:2.8,hm:1.5},
+];
+
+// 灭菌锅 [key, xm, ym, wm, hm]
+const ACDEFS = [
+  {idx:0,xm:12.3,ym:7.0,wm:2.5,hm:2.0},
+  {idx:1,xm:15.2,ym:7.0,wm:2.5,hm:2.0},
+];
+
+// 固定设备（不可交互，仅显示）
+const EQUIP = [
+  // 百级工作台（洁净室内）
+  {label:'百级工作台',xm:0.15,ym:0.15,wm:2.7,hm:0.7,color:'#1e3a5f',tc:'#60a5fa'},
+  {label:'百级工作台',xm:0.15,ym:3.15,wm:2.7,hm:0.7,color:'#1e3a5f',tc:'#60a5fa'},
+  {label:'百级工作台',xm:0.15,ym:6.35,wm:2.7,hm:0.7,color:'#1e3a5f',tc:'#60a5fa'},
+  // 生物安全柜（阳性对照室）
+  {label:'生物安全柜',xm:0.15,ym:4.1, wm:1.2,hm:0.7,color:'#1e3a5f',tc:'#60a5fa'},
+  // 通风橱（理化室）
+  {label:'通风橱(1.5m)',xm:12.15,ym:0.15,wm:1.5,hm:0.8,color:'#2d1b4e',tc:'#a78bfa'},
+  // 边台（理化室上下）
+  {label:'边台 5m',xm:12.15,ym:1.2, wm:7.7,hm:0.7,color:'#1a2a1a',tc:'#6b7280'},
+  {label:'边台 5m',xm:12.15,ym:5.6, wm:7.7,hm:0.7,color:'#1a2a1a',tc:'#6b7280'},
+  // 中央台（理化室）
+  {label:'中央台 4m×1.5m',xm:13.0,ym:2.5,wm:4.0,hm:1.5,color:'#0f2a1a',tc:'#4ade80'},
+  {label:'中央台 4m×1.5m',xm:13.0,ym:4.0,wm:4.0,hm:1.5,color:'#0f2a1a',tc:'#4ade80'},
+  // 冰箱（培养区）
+  {label:'冰箱',xm:11.2,ym:0.2,wm:0.6,hm:1.0,color:'#1a2a3a',tc:'#60a5fa'},
+  // 洗眼器（理化室）
+  {label:'洗眼器',xm:19.2,ym:5.0,wm:0.6,hm:0.6,color:'#1a2a3a',tc:'#60a5fa'},
+];
+
+// 观察窗（黄色线段）
+const WINDEFS = [
+  {xm:3.0,y1m:0.7,y2m:1.7},
+  {xm:3.0,y1m:3.7,y2m:4.7},
+];
+
+// 洗手池（圆形）
+const SINKDEFS = [
+  {xm:2.65,ym:2.6,label:'洗手池'},
+  {xm:2.65,ym:5.8,label:'洗手池'},
+];
 
 /* ══════════════════════════════════════════════════════════════
    SVG 平面图
 ══════════════════════════════════════════════════════════════ */
-const ROOM_DEFS = [
-  {id:'sterile',   label:'无菌室',         x:20,  y:20,  w:180, h:155, clean:true},
-  {id:'yangxing',  label:'阳性对照操作室', x:20,  y:195, w:180, h:155, clean:true},
-  {id:'microbio',  label:'微生物操作室',   x:20,  y:370, w:180, h:155, clean:true},
-  {id:'buffer1',   label:'缓冲间①',        x:220, y:20,  w:100, h:155, clean:false},
-  {id:'buffer2',   label:'缓冲间②',        x:220, y:195, w:100, h:155, clean:false},
-  {id:'culture',   label:'培养区',          x:340, y:20,  w:220, h:330, clean:false},
-  {id:'chemistry', label:'理化实验室',      x:580, y:20,  w:210, h:195, clean:false},
-  {id:'sterilize', label:'灭菌区',          x:580, y:235, w:210, h:115, clean:false},
-];
-const PB_DEFS = [
-  {id:'pb1', label:'传递窗①', x:205, y:97,  from:'缓冲间①', to:'无菌室'},
-  {id:'pb2', label:'传递窗②', x:205, y:272, from:'缓冲间②', to:'阳性对照操作室'},
-  {id:'pb3', label:'传递窗③', x:205, y:447, from:'缓冲间',   to:'微生物操作室'},
-];
-const INC_DEFS = [
-  {id:'inc1', label:'培养箱①', x:352, y:35,  w:90, h:65},
-  {id:'inc2', label:'培养箱②', x:458, y:35,  w:90, h:65},
-  {id:'inc3', label:'培养箱③', x:352, y:115, w:90, h:65},
-  {id:'inc4', label:'培养箱④', x:458, y:115, w:90, h:65},
-];
-const AC_DEF = {x:595, y:250, w:90, h:85, label:'灭菌锅①'};
-
-function LabMap({data, onSelectRoom, onSelectPassbox, onSelectIncubator, onSelectAutoclave}) {
-  const roomMap = useMemo(()=> data ? Object.fromEntries(data.rooms.map(r=>[r.id,r])) : {}, [data]);
-  const pbMap   = useMemo(()=> data ? Object.fromEntries(data.passboxes.map(p=>[p.id,p])) : {}, [data]);
-  const incMap  = useMemo(()=> data ? Object.fromEntries(data.incubators.map(i=>[i.id,i])) : {}, [data]);
-  const ac = data?.autoclave;
+function LabMap({data, onSelect}) {
+  const rmap = useMemo(()=>data?Object.fromEntries(data.rooms.map(r=>[r.id,r])):{}, [data]);
+  const pmap = useMemo(()=>data?Object.fromEntries(data.passboxes.map(p=>[p.id,p])):{}, [data]);
+  const imap = useMemo(()=>data?Object.fromEntries(data.incubators.map(i=>[i.id,i])):{}, [data]);
 
   return (
-    <svg viewBox="0 0 810 670" style={{width:'100%',height:'100%',background:'#0d1117',borderRadius:12}}>
+    <svg viewBox="0 0 1060 620" style={{width:'100%',height:'100%',background:'#0a0d14',borderRadius:10}}>
       <defs>
-        <filter id="glow"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="sg"><feGaussianBlur stdDeviation="1.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <marker id="arr" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto">
+          <polygon points="0,0 7,3.5 0,7" fill="#22c55e" opacity="0.8"/>
+        </marker>
       </defs>
 
-      {/* 区域虚线框 */}
-      <rect x="10" y="10" width="310" height="530" rx="8" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.35"/>
-      <text x="165" y="558" textAnchor="middle" fontSize="11" fill="#22c55e" opacity="0.55">洁净控制区（万级/百级）</text>
-      <rect x="330" y="10" width="240" height="530" rx="8" fill="none" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.28"/>
-      <text x="450" y="558" textAnchor="middle" fontSize="11" fill="#60a5fa" opacity="0.55">培养区</text>
-      <rect x="575" y="10" width="225" height="530" rx="8" fill="none" stroke="#a78bfa" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.28"/>
-      <text x="687" y="558" textAnchor="middle" fontSize="11" fill="#a78bfa" opacity="0.55">理化 / 灭菌区</text>
+      {/* ── 区域大框 ── */}
+      <rect x={gx(0)} y={gy(0)} width={gw(5)} height={gh(9.2)} rx="6"
+        fill="none" stroke="#22c55e" strokeWidth="2" strokeDasharray="8,5" opacity="0.22"/>
+      <text x={gx(2.5)} y={gy(0)-5} textAnchor="middle" fontSize="11" fill="#22c55e" opacity="0.55" fontWeight="600">洁净控制区（万级 ISO 7）</text>
 
-      {/* 房间 */}
-      {ROOM_DEFS.map(({id,label,x,y,w,h,clean})=>{
-        const room = roomMap[id];
-        const status = room?.status||'normal';
-        const col = STATUS_COLOR[status]||STATUS_COLOR.normal;
-        const isAlarm = status==='alarm';
+      <rect x={gx(5)} y={gy(0)} width={gw(7)} height={gh(11)} rx="6"
+        fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18"/>
+      <text x={gx(8.5)} y={gy(0)-5} textAnchor="middle" fontSize="11" fill="#3b82f6" opacity="0.5" fontWeight="600">培养区（7m）</text>
+
+      <rect x={gx(12)} y={gy(0)} width={gw(8)} height={gh(11)} rx="6"
+        fill="none" stroke="#7c3aed" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.18"/>
+      <text x={gx(16)} y={gy(0)-5} textAnchor="middle" fontSize="11" fill="#a78bfa" opacity="0.5" fontWeight="600">理化 / 灭菌区（8m）</text>
+
+      {/* ── 房间 ── */}
+      {RDEFS.map(({id,xm,ym,wm,hm})=>{
+        const r=rmap[id]; const zone=r?.zone||'support';
+        const zc=ZONE_C[zone]||ZONE_C.support;
+        const st=r?.status||'normal';
+        const ac=ALARM_C[st];
+        const bg=ac?ac.bg:zc.bg, border=ac?ac.border:zc.border, lc=ac?ac.lc:zc.lc;
+        const isAlarm=st==='alarm', isClean=zone==='clean';
+        const rx_=gx(xm),ry_=gy(ym),rw=gw(wm),rh=gh(hm),cx=rx_+rw/2,cy=ry_+rh/2;
         return (
-          <g key={id} onClick={()=>onSelectRoom&&onSelectRoom(room)} style={{cursor:'pointer'}}>
-            <rect className={`room-rect${isAlarm?' blink':''}`}
-              x={x} y={y} width={w} height={h} rx="6"
-              fill={col.fill} stroke={col.stroke} strokeWidth={isAlarm?2.5:1.5}/>
-            <text x={x+w/2} y={y+h/2-(clean?16:8)} textAnchor="middle"
-              fontSize="12" fill={col.label} fontWeight="600">{label}</text>
-            {clean && room && (
-              <text x={x+w/2} y={y+h/2+2} textAnchor="middle" fontSize="11"
-                fill={status==='alarm'?'#f87171':status==='warning'?'#fbbf24':'#4ade80'} fontWeight="700">
-                {room.pressure>0?'+':''}{room.pressure} Pa
+          <g key={id} onClick={()=>r&&onSelect('room',r)} style={{cursor:'pointer'}}>
+            <rect className={isAlarm?'blink':''} x={rx_} y={ry_} width={rw} height={rh} rx="5"
+              fill={bg} stroke={border} strokeWidth={isAlarm?2.5:zc.bw}/>
+            <text x={cx} y={cy-(isClean?16:6)} textAnchor="middle"
+              fontSize={wm>4?13:11} fill={lc} fontWeight="700">{r?.name||id}</text>
+            {isClean&&r&&(
+              <text x={cx} y={cy} textAnchor="middle" fontSize="12"
+                fill={st==='alarm'?'#f87171':st==='warning'?'#fbbf24':'#4ade80'} fontWeight="700">
+                {r.pressure>0?'+':''}{r.pressure} Pa
               </text>
             )}
-            {room && (
-              <text x={x+w/2} y={y+h/2+(clean?18:8)} textAnchor="middle" fontSize="10" fill="#64748b">
-                {room.temp}℃ · {room.humidity}%RH
+            {r&&(
+              <text x={cx} y={cy+(isClean?16:8)} textAnchor="middle" fontSize="10" fill="#4b5563">
+                {r.temp}℃ · {r.humidity}%RH
               </text>
             )}
-            {isAlarm && (
-              <text x={x+w-6} y={y+15} textAnchor="end" fontSize="10" fill="#f87171" fontWeight="700" className="blink">⚠ 压差异常</text>
+            {isClean&&r&&(
+              <text x={cx} y={cy+(isClean?30:20)} textAnchor="middle" fontSize="9" fill="#374151">
+                {r.noise}dB
+              </text>
+            )}
+            {isClean&&r?.bsl&&r.bsl!=='—'&&(
+              <g>
+                <rect x={rx_+4} y={ry_+4} width={36} height={14} rx="3" fill={border+'33'} stroke={border} strokeWidth="1"/>
+                <text x={rx_+22} y={ry_+14} textAnchor="middle" fontSize="9" fill={border} fontWeight="700">{r.bsl}</text>
+              </g>
+            )}
+            {isAlarm&&(
+              <text x={rx_+rw-5} y={ry_+16} textAnchor="end" fontSize="10" fill="#f87171" fontWeight="700" className="blink">⚠ 压差异常</text>
             )}
           </g>
         );
       })}
 
-      {/* 更衣区 */}
-      <rect x="20" y="545" width="300" height="75" rx="6" fill="#16213e" stroke="#475569" strokeWidth="1.5"/>
-      <text x="170" y="587" textAnchor="middle" fontSize="12" fill="#8b949e">一更 / 二更 / 更衣柜</text>
+      {/* ── 固定设备 ── */}
+      {EQUIP.map(({label,xm,ym,wm,hm,color,tc},i)=>(
+        <g key={i}>
+          <rect x={gx(xm)} y={gy(ym)} width={gw(wm)} height={gh(hm)} rx="3"
+            fill={color} stroke={tc} strokeWidth="1" opacity="0.85"/>
+          <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)/2+4} textAnchor="middle"
+            fontSize={wm>2?10:9} fill={tc} fontWeight="600">{label}</text>
+        </g>
+      ))}
 
-      {/* 传递窗 */}
-      {PB_DEFS.map(({id,label,x,y,from,to})=>{
-        const pb = pbMap[id];
-        const status = pb?.status||'idle';
-        const col = PB_COLOR[status]||PB_COLOR.idle;
-        const isActive = status==='transferring'||status==='disinfecting';
+      {/* ── 观察窗 ── */}
+      {WINDEFS.map(({xm,y1m,y2m},i)=>(
+        <g key={i}>
+          <line x1={gx(xm)} y1={gy(y1m)} x2={gx(xm)} y2={gy(y2m)}
+            stroke="#fbbf24" strokeWidth="5" strokeLinecap="round" opacity="0.75"/>
+          <text x={gx(xm)+7} y={gy((y1m+y2m)/2)+4} fontSize="8" fill="#fbbf24" opacity="0.8">观察窗</text>
+        </g>
+      ))}
+
+      {/* ── 洗手池 ── */}
+      {SINKDEFS.map(({xm,ym,label},i)=>(
+        <g key={i}>
+          <circle cx={gx(xm)} cy={gy(ym)} r="11" fill="#0a1a2e" stroke="#3b82f6" strokeWidth="1.5"/>
+          <text x={gx(xm)} y={gy(ym)+4} textAnchor="middle" fontSize="9" fill="#60a5fa">💧</text>
+          <text x={gx(xm)+15} y={gy(ym)+4} fontSize="8" fill="#374151">{label}</text>
+        </g>
+      ))}
+
+      {/* ── 更衣区走廊标注 ── */}
+      <rect x={gx(0)} y={gy(9.2)} width={gw(5)} height={gh(1.8)} rx="5"
+        fill="#12102a" stroke="#6366f1" strokeWidth="1.5"/>
+      <text x={gx(2.5)} y={gy(9.2)+gh(0.9)+4} textAnchor="middle" fontSize="11" fill="#818cf8">一更 / 二更 / 更衣柜 / 洗手池</text>
+
+      {/* ── 传递窗 ── */}
+      {PBDEFS.map(({id,xm,ym,from,to})=>{
+        const pb=pmap[id]; const st=pb?.status||'idle';
+        const col=PB_C[st]||PB_C.idle;
+        const isActive=st==='transferring'||st==='disinfecting';
+        const cx=gx(xm), cy=gy(ym);
         return (
-          <g key={id} onClick={()=>onSelectPassbox&&onSelectPassbox({...pb,from,to})} style={{cursor:'pointer'}}>
-            <line x1={x-28} y1={y} x2={x+28} y2={y} stroke={col.stroke} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.6"/>
-            <rect x={x-16} y={y-16} width="32" height="32" rx="4"
-              transform={`rotate(45 ${x} ${y})`}
-              fill={col.fill} stroke={col.stroke} strokeWidth="2"
-              className={isActive?'blink':''}/>
-            <circle cx={x} cy={y} r="5" fill={col.dot} className={isActive?'pulse-dot':''}/>
-            <text x={x} y={y+30} textAnchor="middle" fontSize="9" fill={col.dot}>{label}</text>
-            <text x={x} y={y+41} textAnchor="middle" fontSize="9" fill="#64748b">{PB_LABEL[status]}</text>
-            {pb?.sample && (
-              <text x={x} y={y-26} textAnchor="middle" fontSize="9" fill="#fbbf24" fontWeight="700">{pb.sample}</text>
+          <g key={id} onClick={()=>onSelect('passbox',{...pb,from,to})} style={{cursor:'pointer'}}>
+            {/* 流向线 */}
+            <line x1={cx-26} y1={cy} x2={cx+26} y2={cy}
+              stroke={col.border} strokeWidth="1.5" opacity="0.65"
+              className={isActive?'flow-line':''} strokeDasharray={isActive?undefined:'5,3'}
+              markerEnd={isActive?'url(#arr)':undefined}/>
+            {/* 菱形 */}
+            <rect x={cx-15} y={cy-15} width="30" height="30" rx="4"
+              transform={`rotate(45 ${cx} ${cy})`}
+              fill={col.bg} stroke={col.border} strokeWidth="2"
+              className={isActive?'blink':''} filter={isActive?'url(#sg)':undefined}/>
+            {/* 中心点 */}
+            <circle cx={cx} cy={cy} r="5" fill={col.dot}/>
+            {/* 脉冲环 */}
+            {isActive&&(
+              <circle cx={cx} cy={cy} r="8" fill="none" stroke={col.dot} strokeWidth="1.5" opacity="0.5"
+                style={{animation:'pulseRing 1.2s ease-out infinite'}}/>
+            )}
+            {/* 标签 */}
+            <text x={cx} y={cy+28} textAnchor="middle" fontSize="9" fill={col.dot} fontWeight="600">{pb?.name||id}</text>
+            <text x={cx} y={cy+39} textAnchor="middle" fontSize="8" fill="#374151">{PB_LBL[st]}</text>
+            {pb?.sample&&(
+              <text x={cx} y={cy-26} textAnchor="middle" fontSize="9" fill="#fbbf24" fontWeight="700">{pb.sample}</text>
             )}
           </g>
         );
       })}
 
-      {/* 培养箱 */}
-      {INC_DEFS.map(({id,label,x,y,w,h})=>{
-        const inc = incMap[id];
-        const status = inc?.status||'idle';
-        const stroke = INC_STATUS_COLOR[status]||'#475569';
-        const fill = status==='alarm'?'#2b0a0a':status==='running'?'#0d2b1a':'#1e293b';
+      {/* ── 培养箱 ── */}
+      {INCDEFS.map(({id,xm,ym,wm,hm})=>{
+        const inc=imap[id]; const st=inc?.status||'idle';
+        const stroke=INC_C[st]||'#475569';
+        const fill=st==='alarm'?'#2b0a0a':st==='running'?'#071a0f':'#0f1520';
         return (
-          <g key={id} onClick={()=>onSelectIncubator&&onSelectIncubator(inc)} style={{cursor:'pointer'}}>
-            <rect x={x} y={y} width={w} height={h} rx="4"
-              fill={fill} stroke={stroke} strokeWidth={status==='alarm'?2:1.5}
-              className={status==='alarm'?'blink':''}/>
-            <text x={x+w/2} y={y+h/2-6} textAnchor="middle" fontSize="10" fill={stroke} fontWeight="600">{label}</text>
-            {inc && <text x={x+w/2} y={y+h/2+8} textAnchor="middle" fontSize="10" fill="#94a3b8">{inc.temp}℃</text>}
+          <g key={id} onClick={()=>onSelect('incubator',inc)} style={{cursor:'pointer'}}>
+            <rect x={gx(xm)} y={gy(ym)} width={gw(wm)} height={gh(hm)} rx="4"
+              fill={fill} stroke={stroke} strokeWidth={st==='alarm'?2:1.5}
+              className={st==='alarm'?'blink':''}/>
+            <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)/2-5} textAnchor="middle"
+              fontSize="11" fill={stroke} fontWeight="600">{inc?.name||id}</text>
+            {inc&&(
+              <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)/2+10} textAnchor="middle"
+                fontSize="12" fill="#94a3b8">{inc.temp}℃</text>
+            )}
           </g>
         );
       })}
 
-      {/* 灭菌锅 */}
-      {(()=>{
-        const {x,y,w,h,label} = AC_DEF;
-        const status = ac?.status||'idle';
-        const stroke = AC_STATUS_COLOR[status]||'#475569';
-        const fill = status==='running'?'#2b1f00':status==='cooling'?'#0a1a2e':status==='done'?'#0d2b1a':'#1e293b';
-        const slabel = {idle:'待机',running:'灭菌中',cooling:'冷却中',done:'完成'}[status]||'待机';
+      {/* ── 灭菌锅 ── */}
+      {ACDEFS.map(({idx,xm,ym,wm,hm})=>{
+        const ac=data?.autoclaves?.[idx];
+        const st=ac?.status||'idle';
+        const stroke=AC_C[st]||'#475569';
+        const fill=st==='running'?'#2b1f00':st==='cooling'?'#0a1a2e':st==='done'?'#071a0f':'#0f1520';
+        const slbl={idle:'待机',running:'灭菌中',cooling:'冷却中',done:'完成'}[st]||'待机';
         return (
-          <g onClick={()=>onSelectAutoclave&&onSelectAutoclave(ac)} style={{cursor:'pointer'}}>
-            <rect x={x} y={y} width={w} height={h} rx="4"
-              fill={fill} stroke={stroke} strokeWidth={status==='running'?2.5:1.5}
-              className={status==='running'?'blink':''}/>
-            <text x={x+w/2} y={y+18} textAnchor="middle" fontSize="10" fill={stroke} fontWeight="600">{label}</text>
-            <text x={x+w/2} y={y+33} textAnchor="middle" fontSize="10" fill="#94a3b8">{slabel}</text>
-            {ac?.countdown>0 && <text x={x+w/2} y={y+50} textAnchor="middle" fontSize="12" fill={stroke} fontWeight="700">{ac.countdown}s</text>}
-            {ac?.temp && <text x={x+w/2} y={y+68} textAnchor="middle" fontSize="10" fill="#64748b">{ac.temp}℃</text>}
+          <g key={idx} onClick={()=>onSelect('autoclave',{...ac,idx})} style={{cursor:'pointer'}}>
+            <rect x={gx(xm)} y={gy(ym)} width={gw(wm)} height={gh(hm)} rx="4"
+              fill={fill} stroke={stroke} strokeWidth={st==='running'?2.5:1.5}
+              className={st==='running'?'blink':''}/>
+            <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)/2-10} textAnchor="middle"
+              fontSize="11" fill={stroke} fontWeight="700">{ac?.name||`灭菌锅${idx+1}`}</text>
+            <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)/2+5} textAnchor="middle"
+              fontSize="10" fill="#94a3b8">{slbl}</text>
+            {ac?.countdown>0&&(
+              <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)/2+20} textAnchor="middle"
+                fontSize="12" fill={stroke} fontWeight="700">{ac.countdown}s</text>
+            )}
+            {ac?.temp&&(
+              <text x={gx(xm)+gw(wm)/2} y={gy(ym)+gh(hm)-8} textAnchor="middle"
+                fontSize="9" fill="#374151">{ac.temp}℃</text>
+            )}
           </g>
         );
-      })()}
+      })}
 
-      {/* 通风橱 */}
-      <rect x="590" y="28" width="85" height="48" rx="4" fill="#1a1a2e" stroke="#7c3aed" strokeWidth="1.5"/>
-      <text x="632" y="50" textAnchor="middle" fontSize="10" fill="#a78bfa" fontWeight="600">通风橱</text>
-      <text x="632" y="64" textAnchor="middle" fontSize="9" fill="#64748b">运行中</text>
+      {/* ── 尺寸标注 ── */}
+      <line x1={gx(0)} y1={gy(11.2)} x2={gx(20)} y2={gy(11.2)} stroke="#1e2530" strokeWidth="1"/>
+      <text x={gx(10)} y={gy(11.2)+14} textAnchor="middle" fontSize="10" fill="#374151">总宽 20m（5m 洁净区 + 7m 培养区 + 8m 理化/灭菌区）</text>
+      <line x1={gx(5)} y1={gy(11.0)} x2={gx(5)} y2={gy(11.4)} stroke="#1e2530" strokeWidth="1"/>
+      <line x1={gx(12)} y1={gy(11.0)} x2={gx(12)} y2={gy(11.4)} stroke="#1e2530" strokeWidth="1"/>
 
-      {/* 图例 */}
-      <g transform="translate(340,375)">
-        <rect x="0" y="0" width="215" height="125" rx="6" fill="#161b22" stroke="#30363d" strokeWidth="1"/>
-        <text x="107" y="17" textAnchor="middle" fontSize="11" fill="#8b949e" fontWeight="600">图例</text>
-        {[{col:'#22c55e',lbl:'正常'},{col:'#f59e0b',lbl:'警告'},{col:'#ef4444',lbl:'告警（闪烁）'}].map(({col,lbl},i)=>(
-          <g key={i} transform={`translate(10,${28+i*22})`}>
-            <rect width="16" height="12" rx="2" fill={col} opacity="0.3" stroke={col} strokeWidth="1.5"/>
-            <text x="22" y="10" fontSize="10" fill="#8b949e">{lbl}</text>
+      {/* ── 图例 ── */}
+      <g transform={`translate(${gx(12.1)},${gy(8.8)})`}>
+        <rect x="0" y="0" width="250" height="155" rx="6" fill="#0d1117" stroke="#1e2530" strokeWidth="1"/>
+        <text x="125" y="16" textAnchor="middle" fontSize="11" fill="#6b7280" fontWeight="700">图例</text>
+        {[
+          {col:'#22c55e',lbl:'洁净区（正常）'},
+          {col:'#f59e0b',lbl:'洁净区（警告）'},
+          {col:'#ef4444',lbl:'洁净区（告警·闪烁）'},
+          {col:'#3b82f6',lbl:'缓冲间'},
+          {col:'#6366f1',lbl:'更衣区'},
+        ].map(({col,lbl},i)=>(
+          <g key={i} transform={`translate(10,${26+i*22})`}>
+            <rect width="14" height="12" rx="2" fill={col} opacity="0.22" stroke={col} strokeWidth="1.5"/>
+            <text x="20" y="10" fontSize="10" fill="#6b7280">{lbl}</text>
           </g>
         ))}
-        {[{col:'#64748b',lbl:'传递窗：空闲'},{col:'#f59e0b',lbl:'传递窗：消毒中'},{col:'#4ade80',lbl:'传递窗：完成'}].map(({col,lbl},i)=>(
-          <g key={i} transform={`translate(108,${28+i*22})`}>
+        {[
+          {col:'#64748b',lbl:'传递窗：空闲'},
+          {col:'#f59e0b',lbl:'传递窗：消毒中'},
+          {col:'#4ade80',lbl:'传递窗：完成'},
+        ].map(({col,lbl},i)=>(
+          <g key={i} transform={`translate(130,${26+i*22})`}>
             <circle cx="7" cy="6" r="5" fill={col} opacity="0.85"/>
-            <text x="17" y="10" fontSize="10" fill="#8b949e">{lbl}</text>
+            <text x="16" y="10" fontSize="10" fill="#6b7280">{lbl}</text>
           </g>
         ))}
+        <text x="10" y="148" fontSize="9" fill="#1e2530">点击任意设备查看详情 · 点击传递窗启动传递</text>
       </g>
 
-      <text x="805" y="640" textAnchor="end" fontSize="9" fill="#21262d">Mini-LIMS MVP · Andersen Lab Digital Twin</text>
+      <text x="1055" y="618" textAnchor="end" fontSize="8" fill="#1e2530">Mini-LIMS v3 · Andersen Lab · 2026</text>
     </svg>
   );
 }
@@ -299,98 +461,98 @@ function LabMap({data, onSelectRoom, onSelectPassbox, onSelectIncubator, onSelec
 /* ══════════════════════════════════════════════════════════════
    弹窗面板
 ══════════════════════════════════════════════════════════════ */
-const overlay = {position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000};
-const card = {background:'#161b22',border:'1px solid #30363d',borderRadius:12,padding:24,minWidth:340,maxWidth:460,width:'90vw',boxShadow:'0 20px 60px rgba(0,0,0,0.6)'};
-const Btn = ({color='#22c55e',disabled,onClick,children})=>(
-  <button onClick={onClick} disabled={disabled} style={{padding:'8px 18px',borderRadius:6,border:'none',cursor:disabled?'not-allowed':'pointer',background:disabled?'#1e293b':color,color:disabled?'#475569':'#fff',fontSize:13,fontWeight:600,opacity:disabled?0.6:1}}>{children}</button>
+const CS = {background:'#161b22',border:'1px solid #21262d',borderRadius:12,padding:24,minWidth:340,maxWidth:480,width:'90vw',boxShadow:'0 24px 64px rgba(0,0,0,0.75)'};
+const Btn=({color='#22c55e',disabled,onClick,children})=>(
+  <button onClick={onClick} disabled={disabled}
+    style={{padding:'8px 18px',borderRadius:6,border:'none',cursor:disabled?'not-allowed':'pointer',
+      background:disabled?'#1e293b':color,color:disabled?'#475569':'#fff',fontSize:13,fontWeight:600,opacity:disabled?0.6:1}}>
+    {children}
+  </button>
 );
-const Tag = ({color,children})=>(
+const Tag=({color,children})=>(
   <span style={{display:'inline-block',padding:'2px 10px',borderRadius:20,background:color+'22',border:`1px solid ${color}`,color,fontSize:12,fontWeight:600}}>{children}</span>
 );
-const Row = ({label,children})=>(
-  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-    <span style={{color:'#8b949e',fontSize:13}}>{label}</span>
-    <span style={{color:'#e6edf3',fontSize:14,fontWeight:600}}>{children}</span>
+const IR=({label,val,vc})=>(
+  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10,paddingBottom:10,borderBottom:'1px solid #21262d'}}>
+    <span style={{color:'#6b7280',fontSize:13}}>{label}</span>
+    <span style={{color:vc||'#e6edf3',fontSize:14,fontWeight:600}}>{val}</span>
   </div>
 );
 
 function RoomPanel({room,onClose}) {
-  const col = {normal:'#22c55e',warning:'#f59e0b',alarm:'#ef4444'}[room.status]||'#64748b';
-  const slabel = {normal:'正常',warning:'警告',alarm:'压差异常'}[room.status]||room.status;
+  const col={normal:'#22c55e',warning:'#f59e0b',alarm:'#ef4444'}[room.status]||'#64748b';
+  const slbl={normal:'正常',warning:'压差偏高（警告）',alarm:'压差超标（告警）'}[room.status]||room.status;
+  const pc=room.status==='alarm'?'#f87171':room.status==='warning'?'#fbbf24':'#4ade80';
   return (
-    <div style={card}>
-      <div style={{display:'flex',justifyContent:'space-between',marginBottom:20}}>
-        <h3 style={{color:'#e6edf3',fontSize:16,fontWeight:700}}>🏠 {room.name}</h3>
-        <button onClick={onClose} style={{background:'none',border:'none',color:'#8b949e',cursor:'pointer',fontSize:18}}>✕</button>
+    <div style={CS}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <h3 style={{color:'#e6edf3',fontSize:17,fontWeight:700,marginBottom:8}}>🏠 {room.name}</h3>
+          <Tag color={col}>{slbl}</Tag>
+          {room.bsl&&room.bsl!=='—'&&<span style={{marginLeft:8}}><Tag color="#7c3aed">{room.bsl}</Tag></span>}
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:20}}>✕</button>
       </div>
-      <div style={{marginBottom:16}}><Tag color={col}>{slabel}</Tag></div>
-      <Row label="室内压差"><span style={{color:col}}>{room.pressure} Pa</span></Row>
-      <Row label="温度">{room.temp} ℃</Row>
-      <Row label="湿度">{room.humidity} %RH</Row>
-      {room.status==='alarm' && (
-        <div style={{marginTop:16,padding:'10px 14px',background:'#2b0a0a',border:'1px solid #ef4444',borderRadius:8}}>
-          <p style={{color:'#f87171',fontSize:13,fontWeight:600}}>⚠ 压差超出阈值！请检查门窗密封及空调系统。</p>
+      <IR label="室内压差" val={`${room.pressure>0?'+':''}${room.pressure} Pa`} vc={pc}/>
+      <IR label="温度" val={`${room.temp} ℃`}/>
+      <IR label="湿度" val={`${room.humidity} %RH`}/>
+      <IR label="噪声" val={`${room.noise} dB`}/>
+      <IR label="洁净级别" val={room.grade||'—'}/>
+      {room.status==='alarm'&&(
+        <div style={{marginTop:12,padding:'12px 14px',background:'#2b0a0a',border:'1px solid #ef4444',borderRadius:8}}>
+          <p style={{color:'#f87171',fontSize:13,fontWeight:600,marginBottom:4}}>⚠ 压差超出阈值</p>
+          <p style={{color:'#ef4444',fontSize:12}}>当前 {room.pressure} Pa，超过 -5 Pa 警戒线。请检查：门窗密封、空调送风量及过滤器状态。</p>
         </div>
       )}
-      <div style={{marginTop:20,textAlign:'right'}}><Btn color="#475569" onClick={onClose}>关闭</Btn></div>
+      <div style={{marginTop:20,textAlign:'right'}}><Btn color="#374151" onClick={onClose}>关闭</Btn></div>
     </div>
   );
 }
 
-function PassboxPanel({pb, onClose, onAction}) {
+function PassboxPanel({pb,onClose,onAction}) {
+  const [sid,setSid]=useState('');
   const [loading,setLoading]=useState(false);
-  const [sampleId,setSampleId]=useState('');
-  const col = PB_COLOR[pb.status]?.dot||'#64748b';
-  const slabel = PB_LABEL[pb.status]||pb.status;
-  const canTransfer = pb.status==='idle'||pb.status==='done';
-
-  function handleTransfer() {
+  const col=PB_C[pb.status]?.dot||'#64748b';
+  const canTransfer=pb.status==='idle'||pb.status==='done';
+  function doTransfer(){
     setLoading(true);
-    const sid = sampleId || `S${String(_sampleCounter++).padStart(4,'0')}`;
-    onAction('transfer', pb.id, sid, pb.from, pb.to);
-    setSampleId('');
-    setTimeout(()=>setLoading(false), 500);
-    onClose();
+    const s=sid||`S${String(_sc++).padStart(4,'0')}`;
+    onAction('transfer',pb.id,s,pb.from,pb.to);
+    setSid(''); setTimeout(()=>setLoading(false),400); onClose();
   }
-  function handleReset() {
-    onAction('reset', pb.id);
-    onClose();
-  }
-
   return (
-    <div style={card}>
-      <div style={{display:'flex',justifyContent:'space-between',marginBottom:20}}>
-        <h3 style={{color:'#e6edf3',fontSize:16,fontWeight:700}}>🔲 {pb.name}</h3>
-        <button onClick={onClose} style={{background:'none',border:'none',color:'#8b949e',cursor:'pointer',fontSize:18}}>✕</button>
+    <div style={CS}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <h3 style={{color:'#e6edf3',fontSize:17,fontWeight:700,marginBottom:8}}>🔲 {pb.name}</h3>
+          <Tag color={col}>{PB_LBL[pb.status]||pb.status}</Tag>
+          {pb.sample&&<span style={{marginLeft:8}}><Tag color="#fbbf24">样品：{pb.sample}</Tag></span>}
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:20}}>✕</button>
       </div>
-      <div style={{marginBottom:16}}>
-        <Tag color={col}>{slabel}</Tag>
-        {pb.sample && <span style={{marginLeft:8}}><Tag color="#fbbf24">样品：{pb.sample}</Tag></span>}
-      </div>
-      <Row label="传递方向">{pb.from} → {pb.to}</Row>
-      {pb.updated_at && <Row label="最后更新"><span style={{fontSize:12,color:'#8b949e'}}>{new Date(pb.updated_at).toLocaleTimeString()}</span></Row>}
-      {canTransfer && (
-        <div style={{marginTop:12}}>
-          <p style={{color:'#8b949e',fontSize:12,marginBottom:6}}>样品编号（留空自动生成）</p>
-          <input value={sampleId} onChange={e=>setSampleId(e.target.value)} placeholder="如：S0001"
-            style={{width:'100%',padding:'8px 12px',borderRadius:6,background:'#0d1117',border:'1px solid #30363d',color:'#e6edf3',fontSize:13,outline:'none',marginBottom:10}}/>
+      <IR label="传递方向" val={`${pb.from} → ${pb.to}`}/>
+      {pb.updated_at&&<IR label="最后操作" val={new Date(pb.updated_at).toLocaleTimeString()}/>}
+      {canTransfer&&(
+        <div style={{marginBottom:14}}>
+          <p style={{color:'#6b7280',fontSize:12,marginBottom:6}}>样品编号（留空自动生成）</p>
+          <input value={sid} onChange={e=>setSid(e.target.value)} placeholder="如：S0001"
+            style={{width:'100%',padding:'9px 12px',borderRadius:6,background:'#0d1117',border:'1px solid #21262d',color:'#e6edf3',fontSize:13,outline:'none'}}/>
         </div>
       )}
-      <div style={{display:'flex',gap:10,marginTop:8,justifyContent:'flex-end'}}>
-        {canTransfer && <Btn color="#22c55e" disabled={loading} onClick={handleTransfer}>▶ 启动传递</Btn>}
-        {!canTransfer && pb.status!=='idle' && <Btn color="#ef4444" onClick={handleReset}>重置</Btn>}
-        <Btn color="#475569" onClick={onClose}>关闭</Btn>
+      <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:8}}>
+        {canTransfer&&<Btn color="#22c55e" disabled={loading} onClick={doTransfer}>▶ 启动传递</Btn>}
+        {!canTransfer&&pb.status!=='idle'&&<Btn color="#ef4444" onClick={()=>{onAction('reset',pb.id);onClose();}}>重置</Btn>}
+        <Btn color="#374151" onClick={onClose}>关闭</Btn>
       </div>
-      {/* 状态流程 */}
       <div style={{marginTop:18,display:'flex',alignItems:'center',gap:5,justifyContent:'center'}}>
         {['idle','transferring','disinfecting','done'].map((s,i)=>{
-          const active = pb.status===s;
-          const c = PB_COLOR[s]?.dot||'#64748b';
-          const l = {idle:'空闲',transferring:'传递',disinfecting:'消毒',done:'完成'}[s];
+          const a=pb.status===s; const c=PB_C[s]?.dot||'#64748b';
+          const l={idle:'空闲',transferring:'传递',disinfecting:'消毒',done:'完成'}[s];
           return (
             <React.Fragment key={s}>
-              <div style={{padding:'2px 9px',borderRadius:12,fontSize:11,fontWeight:600,background:active?c+'33':'transparent',border:`1px solid ${active?c:'#30363d'}`,color:active?c:'#475569'}}>{l}</div>
-              {i<3 && <span style={{color:'#30363d',fontSize:11}}>→</span>}
+              <div style={{padding:'2px 9px',borderRadius:12,fontSize:11,fontWeight:600,
+                background:a?c+'33':'transparent',border:`1px solid ${a?c:'#21262d'}`,color:a?c:'#374151'}}>{l}</div>
+              {i<3&&<span style={{color:'#21262d',fontSize:11}}>→</span>}
             </React.Fragment>
           );
         })}
@@ -399,65 +561,69 @@ function PassboxPanel({pb, onClose, onAction}) {
   );
 }
 
-function IncubatorPanel({inc,onClose}) {
-  const col = INC_STATUS_COLOR[inc.status]||'#64748b';
-  const slabel = {idle:'待机',running:'运行中',alarm:'温度异常'}[inc.status]||inc.status;
-  const diff = Math.abs(inc.temp-inc.setpoint).toFixed(1);
+function IncPanel({inc,onClose}) {
+  const col=INC_C[inc.status]||'#64748b';
+  const slbl={idle:'待机',running:'运行中',alarm:'温度异常'}[inc.status]||inc.status;
+  const diff=Math.abs(inc.temp-inc.setpoint).toFixed(1);
   return (
-    <div style={card}>
-      <div style={{display:'flex',justifyContent:'space-between',marginBottom:20}}>
-        <h3 style={{color:'#e6edf3',fontSize:16,fontWeight:700}}>🧫 {inc.name}</h3>
-        <button onClick={onClose} style={{background:'none',border:'none',color:'#8b949e',cursor:'pointer',fontSize:18}}>✕</button>
+    <div style={CS}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <h3 style={{color:'#e6edf3',fontSize:17,fontWeight:700,marginBottom:8}}>🧫 {inc.name}</h3>
+          <Tag color={col}>{slbl}</Tag>
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:20}}>✕</button>
       </div>
-      <div style={{marginBottom:16}}><Tag color={col}>{slabel}</Tag></div>
-      <Row label="当前温度"><span style={{color:col,fontSize:20}}>{inc.temp} ℃</span></Row>
-      <Row label="设定温度">{inc.setpoint} ℃</Row>
-      <Row label="偏差"><span style={{color:parseFloat(diff)>1?'#ef4444':'#22c55e'}}>±{diff} ℃</span></Row>
-      <div style={{marginTop:14}}>
+      <IR label="当前温度" val={`${inc.temp} ℃`} vc={col}/>
+      <IR label="设定温度" val={`${inc.setpoint} ℃`}/>
+      <IR label="偏差" val={`±${diff} ℃`} vc={parseFloat(diff)>1?'#ef4444':'#22c55e'}/>
+      <div style={{marginTop:4}}>
         <div style={{height:8,background:'#1e293b',borderRadius:4,overflow:'hidden'}}>
-          <div style={{height:'100%',borderRadius:4,width:`${Math.min(100,(inc.temp/50)*100)}%`,background:col,transition:'width 0.5s'}}/>
+          <div style={{height:'100%',borderRadius:4,width:`${Math.min(100,(inc.temp/50)*100)}%`,background:col,transition:'width 0.6s'}}/>
         </div>
-        <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
-          <span style={{color:'#475569',fontSize:10}}>0℃</span>
-          <span style={{color:'#475569',fontSize:10}}>50℃</span>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:3}}>
+          <span style={{color:'#374151',fontSize:10}}>0℃</span><span style={{color:'#374151',fontSize:10}}>50℃</span>
         </div>
       </div>
-      {inc.status==='alarm' && (
-        <div style={{marginTop:14,padding:'10px 14px',background:'#2b0a0a',border:'1px solid #ef4444',borderRadius:8}}>
+      {inc.status==='alarm'&&(
+        <div style={{marginTop:14,padding:'12px 14px',background:'#2b0a0a',border:'1px solid #ef4444',borderRadius:8}}>
           <p style={{color:'#f87171',fontSize:13}}>⚠ 温度偏差超过 1.5℃，请检查培养箱门封及制冷系统。</p>
         </div>
       )}
-      <div style={{marginTop:20,textAlign:'right'}}><Btn color="#475569" onClick={onClose}>关闭</Btn></div>
+      <div style={{marginTop:20,textAlign:'right'}}><Btn color="#374151" onClick={onClose}>关闭</Btn></div>
     </div>
   );
 }
 
-function AutoclavePanel({ac, onClose, onAction}) {
-  const col = AC_STATUS_COLOR[ac.status]||'#475569';
-  const slabel = {idle:'待机',running:'灭菌中',cooling:'冷却中',done:'完成'}[ac.status]||ac.status;
-  const canStart = ac.status==='idle'||ac.status==='done';
+function AcPanel({ac,onClose,onAction}) {
+  const col=AC_C[ac.status]||'#475569';
+  const slbl={idle:'待机',running:'灭菌中（121℃）',cooling:'冷却中',done:'完成'}[ac.status]||ac.status;
+  const canStart=ac.status==='idle'||ac.status==='done';
+  const pct=ac.status==='running'?Math.max(0,100-(ac.countdown/60)*100):ac.status==='cooling'?Math.max(0,100-(ac.countdown/20)*100):0;
   return (
-    <div style={card}>
-      <div style={{display:'flex',justifyContent:'space-between',marginBottom:20}}>
-        <h3 style={{color:'#e6edf3',fontSize:16,fontWeight:700}}>♨️ {ac.name}</h3>
-        <button onClick={onClose} style={{background:'none',border:'none',color:'#8b949e',cursor:'pointer',fontSize:18}}>✕</button>
+    <div style={CS}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <h3 style={{color:'#e6edf3',fontSize:17,fontWeight:700,marginBottom:8}}>♨️ {ac.name}</h3>
+          <Tag color={col}>{slbl}</Tag>
+        </div>
+        <button onClick={onClose} style={{background:'none',border:'none',color:'#6b7280',cursor:'pointer',fontSize:20}}>✕</button>
       </div>
-      <div style={{marginBottom:16}}><Tag color={col}>{slabel}</Tag></div>
-      <Row label="当前温度"><span style={{color:col,fontSize:20}}>{ac.temp} ℃</span></Row>
-      <Row label="剩余时间">{ac.countdown>0?`${ac.countdown} s`:'—'}</Row>
-      <Row label="累计灭菌次数">{ac.cycle_total} 次</Row>
-      {ac.status==='running' && (
-        <div style={{marginTop:12}}>
+      <IR label="当前温度" val={`${ac.temp} ℃`} vc={col}/>
+      <IR label="剩余时间" val={ac.countdown>0?`${ac.countdown} s`:'—'}/>
+      <IR label="累计灭菌次数" val={`${ac.cycles} 次`}/>
+      {(ac.status==='running'||ac.status==='cooling')&&(
+        <div style={{marginTop:8}}>
           <div style={{height:8,background:'#1e293b',borderRadius:4,overflow:'hidden'}}>
-            <div style={{height:'100%',borderRadius:4,background:'#f59e0b',width:`${Math.max(0,100-(ac.countdown/60)*100)}%`,transition:'width 0.5s'}}/>
+            <div style={{height:'100%',borderRadius:4,background:col,width:`${pct}%`,transition:'width 0.5s'}}/>
           </div>
-          <p style={{color:'#8b949e',fontSize:11,marginTop:4}}>灭菌进度（121℃ 高压蒸汽）</p>
+          <p style={{color:'#6b7280',fontSize:11,marginTop:4}}>{ac.status==='running'?'灭菌进度':'冷却进度'}</p>
         </div>
       )}
       <div style={{display:'flex',gap:10,marginTop:20,justifyContent:'flex-end'}}>
-        {canStart && <Btn color="#f59e0b" onClick={()=>{onAction('autoclave_start');onClose();}}>▶ 启动灭菌</Btn>}
-        {!canStart && <Btn color="#ef4444" onClick={()=>{onAction('autoclave_reset');onClose();}}>重置</Btn>}
-        <Btn color="#475569" onClick={onClose}>关闭</Btn>
+        {canStart&&<Btn color="#f59e0b" onClick={()=>{onAction('ac_start',ac.idx);onClose();}}>▶ 启动灭菌</Btn>}
+        {!canStart&&<Btn color="#ef4444" onClick={()=>{onAction('ac_reset',ac.idx);onClose();}}>重置</Btn>}
+        <Btn color="#374151" onClick={onClose}>关闭</Btn>
       </div>
     </div>
   );
@@ -467,143 +633,127 @@ function AutoclavePanel({ac, onClose, onAction}) {
    主 App
 ══════════════════════════════════════════════════════════════ */
 function App() {
-  const [state, setState] = useState(createInitialState);
-  const [modal, setModal] = useState(null);
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const [state,setState]=useState(createState);
+  const [modal,setModal]=useState(null);
 
-  // 模拟 tick（每 2 秒）
   useEffect(()=>{
-    const id = setInterval(()=>{
-      setState(prev => simulateTick(prev));
-    }, 2000);
+    const id=setInterval(()=>setState(p=>tick(p)),2000);
     return ()=>clearInterval(id);
   },[]);
 
-  // 传递窗 / 灭菌锅操作
-  const handleAction = useCallback((type, pbId, sampleId, from, to)=>{
-    if (type==='transfer') {
-      setState(prev=>{
-        const next = JSON.parse(JSON.stringify(prev));
-        const pb = next.passboxes.find(p=>p.id===pbId);
-        if (!pb || (pb.status!=='idle'&&pb.status!=='done')) return prev;
-        pb.status='transferring'; pb.sample=sampleId; pb.updated_at=new Date().toISOString();
-        next.sample_log.push({ts:new Date().toISOString(),sample:sampleId,passbox:pb.name,from_room:from,to_room:to,event:'transfer_start'});
-        return next;
+  const act=useCallback((type,id,sid,from,to)=>{
+    if(type==='transfer'){
+      setState(p=>{
+        const n=JSON.parse(JSON.stringify(p));
+        const pb=n.passboxes.find(x=>x.id===id);
+        if(!pb||(pb.status!=='idle'&&pb.status!=='done')) return p;
+        pb.status='transferring'; pb.sample=sid; pb.updated_at=new Date().toISOString();
+        n.sample_log.push({ts:new Date().toISOString(),sample:sid,passbox:pb.name,from_room:from,to_room:to,event:'transfer_start'});
+        return n;
       });
-      // 2s → disinfecting
-      setTimeout(()=>{
-        setState(prev=>{
-          const next=JSON.parse(JSON.stringify(prev));
-          const pb=next.passboxes.find(p=>p.id===pbId);
-          if(pb&&pb.status==='transferring'){pb.status='disinfecting';pb.updated_at=new Date().toISOString();}
-          return next;
-        });
-      },2000);
-      // 5s → done
-      setTimeout(()=>{
-        setState(prev=>{
-          const next=JSON.parse(JSON.stringify(prev));
-          const pb=next.passboxes.find(p=>p.id===pbId);
-          if(pb&&pb.status==='disinfecting'){
-            pb.status='done';pb.updated_at=new Date().toISOString();
-            next.sample_log.push({ts:new Date().toISOString(),sample:pb.sample,passbox:pb.name,from_room:from,to_room:to,event:'transfer_done'});
-          }
-          return next;
-        });
-      },5000);
-    } else if (type==='reset') {
-      setState(prev=>{
-        const next=JSON.parse(JSON.stringify(prev));
-        const pb=next.passboxes.find(p=>p.id===pbId);
-        if(pb){pb.status='idle';pb.sample=null;pb.updated_at=new Date().toISOString();}
-        return next;
-      });
-    } else if (type==='autoclave_start') {
-      setState(prev=>{
-        const next=JSON.parse(JSON.stringify(prev));
-        if(next.autoclave.status==='idle'||next.autoclave.status==='done'){
-          next.autoclave.status='running';next.autoclave.countdown=60;next.autoclave.temp=121.0;
+      setTimeout(()=>setState(p=>{
+        const n=JSON.parse(JSON.stringify(p));
+        const pb=n.passboxes.find(x=>x.id===id);
+        if(pb&&pb.status==='transferring'){pb.status='disinfecting';pb.updated_at=new Date().toISOString();}
+        return n;
+      }),2000);
+      setTimeout(()=>setState(p=>{
+        const n=JSON.parse(JSON.stringify(p));
+        const pb=n.passboxes.find(x=>x.id===id);
+        if(pb&&pb.status==='disinfecting'){
+          pb.status='done'; pb.updated_at=new Date().toISOString();
+          n.sample_log.push({ts:new Date().toISOString(),sample:pb.sample,passbox:pb.name,from_room:from,to_room:to,event:'transfer_done'});
         }
-        return next;
+        return n;
+      }),5000);
+    } else if(type==='reset'){
+      setState(p=>{
+        const n=JSON.parse(JSON.stringify(p));
+        const pb=n.passboxes.find(x=>x.id===id);
+        if(pb){pb.status='idle';pb.sample=null;pb.updated_at=new Date().toISOString();}
+        return n;
       });
-    } else if (type==='autoclave_reset') {
-      setState(prev=>{
-        const next=JSON.parse(JSON.stringify(prev));
-        next.autoclave.status='idle';next.autoclave.countdown=0;next.autoclave.temp=25.0;
-        return next;
+    } else if(type==='ac_start'){
+      setState(p=>{
+        const n=JSON.parse(JSON.stringify(p));
+        const ac=n.autoclaves[id];
+        if(ac&&(ac.status==='idle'||ac.status==='done')){ac.status='running';ac.countdown=60;ac.temp=121.0;}
+        return n;
+      });
+    } else if(type==='ac_reset'){
+      setState(p=>{
+        const n=JSON.parse(JSON.stringify(p));
+        const ac=n.autoclaves[id];
+        if(ac){ac.status='idle';ac.countdown=0;ac.temp=25.0;}
+        return n;
       });
     }
   },[]);
 
-  const alarmCount = state.rooms.filter(r=>r.status==='alarm').length;
-  const warnCount  = state.rooms.filter(r=>r.status==='warning').length;
-  const cleanRooms = state.rooms.filter(r=>['sterile','yangxing','microbio'].includes(r.id));
-  const logs = state.sample_log;
+  const alarmN=state.rooms.filter(r=>r.status==='alarm').length;
+  const warnN =state.rooms.filter(r=>r.status==='warning').length;
+  const cleanR=state.rooms.filter(r=>r.zone==='clean');
+  const logs  =state.sample_log;
 
   return (
     <div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden'}}>
       {/* 顶部栏 */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 20px',background:'#161b22',borderBottom:'1px solid #21262d',flexShrink:0}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:32,height:32,borderRadius:8,background:'linear-gradient(135deg,#22c55e,#16a34a)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>🧬</div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+        padding:'9px 20px',background:'#0d1117',borderBottom:'1px solid #161b22',flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:34,height:34,borderRadius:8,background:'linear-gradient(135deg,#22c55e,#16a34a)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🧬</div>
           <div>
-            <div style={{fontSize:15,fontWeight:700}}>Mini-LIMS</div>
-            <div style={{fontSize:10,color:'#8b949e'}}>微生物实验室数字孪生 MVP · Andersen Lab</div>
+            <div style={{fontSize:15,fontWeight:700,letterSpacing:'0.02em'}}>Mini-LIMS</div>
+            <div style={{fontSize:10,color:'#6b7280'}}>Andersen 微生物实验室 · 数字孪生系统 v3.0 · 图纸精准版</div>
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:12}}>
-          {alarmCount>0 && (
-            <div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 12px',background:'#2b0a0a',border:'1px solid #ef4444',borderRadius:20}}>
+          {alarmN>0&&(
+            <div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 12px',
+              background:'#2b0a0a',border:'1px solid #ef4444',borderRadius:20}}>
               <span style={{width:8,height:8,borderRadius:'50%',background:'#ef4444',display:'inline-block',animation:'blink 1s infinite'}}/>
-              <span style={{color:'#f87171',fontSize:12,fontWeight:600}}>{alarmCount} 告警</span>
+              <span style={{color:'#f87171',fontSize:12,fontWeight:600}}>{alarmN} 告警</span>
             </div>
           )}
-          {warnCount>0 && (
+          {warnN>0&&(
             <div style={{padding:'4px 12px',background:'#2b1f00',border:'1px solid #f59e0b',borderRadius:20}}>
-              <span style={{color:'#fbbf24',fontSize:12,fontWeight:600}}>⚠ {warnCount} 警告</span>
+              <span style={{color:'#fbbf24',fontSize:12,fontWeight:600}}>⚠ {warnN} 警告</span>
             </div>
           )}
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <span style={{width:8,height:8,borderRadius:'50%',background:'#22c55e',display:'inline-block'}}/>
-            <span style={{color:'#8b949e',fontSize:12}}>实时模拟 · {new Date(state.ts).toLocaleTimeString()}</span>
+            <span style={{color:'#6b7280',fontSize:12}}>实时模拟 · {new Date(state.ts).toLocaleTimeString()}</span>
           </div>
         </div>
       </div>
 
       {/* 主体 */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-        {/* 平面图 */}
-        <div style={{flex:1,padding:14,overflow:'hidden'}}>
-          <LabMap
-            data={state}
-            onSelectRoom={r=>r&&setModal({type:'room',data:r})}
-            onSelectPassbox={p=>p&&setModal({type:'passbox',data:p})}
-            onSelectIncubator={i=>i&&setModal({type:'incubator',data:i})}
-            onSelectAutoclave={a=>a&&setModal({type:'autoclave',data:a})}
-          />
+        <div style={{flex:1,padding:12,overflow:'hidden'}}>
+          <LabMap data={state} onSelect={(type,d)=>setModal({type,data:d})}/>
         </div>
-
         {/* 日志栏 */}
-        <div style={{width:250,flexShrink:0,background:'#161b22',borderLeft:'1px solid #21262d',display:'flex',flexDirection:'column'}}>
-          <div style={{padding:'12px 16px',borderBottom:'1px solid #21262d'}}>
-            <h3 style={{fontSize:13,fontWeight:700,color:'#8b949e'}}>📋 样品流转日志</h3>
+        <div style={{width:235,flexShrink:0,background:'#0d1117',borderLeft:'1px solid #161b22',display:'flex',flexDirection:'column'}}>
+          <div style={{padding:'12px 14px',borderBottom:'1px solid #161b22'}}>
+            <h3 style={{fontSize:12,fontWeight:700,color:'#6b7280',letterSpacing:'0.05em'}}>📋 样品流转日志</h3>
           </div>
-          <div style={{flex:1,overflowY:'auto',padding:'6px 0'}}>
-            {logs.length===0 && (
-              <p style={{color:'#475569',fontSize:12,textAlign:'center',marginTop:40,lineHeight:1.8}}>暂无记录<br/>点击传递窗启动传递</p>
+          <div style={{flex:1,overflowY:'auto',padding:'4px 0'}}>
+            {logs.length===0&&(
+              <p style={{color:'#21262d',fontSize:12,textAlign:'center',marginTop:50,lineHeight:2}}>暂无记录<br/>点击传递窗启动传递</p>
             )}
             {[...logs].reverse().map((log,i)=>{
-              const col = {transfer_start:'#f59e0b',transfer_done:'#22c55e'}[log.event]||'#64748b';
-              const elabel = {transfer_start:'开始传递',transfer_done:'传递完成'}[log.event]||log.event;
+              const col={transfer_start:'#f59e0b',transfer_done:'#22c55e'}[log.event]||'#64748b';
+              const elbl={transfer_start:'开始传递',transfer_done:'传递完成'}[log.event]||log.event;
               return (
-                <div key={i} className="log-item" style={{padding:'9px 14px',borderBottom:'1px solid #21262d'}}>
+                <div key={i} className="log-item" style={{padding:'9px 14px',borderBottom:'1px solid #0d1117'}}>
                   <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
                     <span style={{fontSize:12,fontWeight:700,color:col}}>{log.sample}</span>
-                    <span style={{fontSize:10,color:'#475569'}}>{new Date(log.ts).toLocaleTimeString()}</span>
+                    <span style={{fontSize:10,color:'#21262d'}}>{new Date(log.ts).toLocaleTimeString()}</span>
                   </div>
-                  <div style={{fontSize:11,color:'#8b949e',marginBottom:4}}>{log.from_room} → {log.to_room}</div>
-                  <span style={{display:'inline-block',padding:'1px 8px',borderRadius:10,background:col+'22',border:`1px solid ${col}`,color:col,fontSize:10,fontWeight:600}}>{elabel}</span>
+                  <div style={{fontSize:11,color:'#6b7280',marginBottom:4}}>{log.from_room} → {log.to_room}</div>
+                  <span style={{display:'inline-block',padding:'1px 8px',borderRadius:10,
+                    background:col+'22',border:`1px solid ${col}`,color:col,fontSize:10,fontWeight:600}}>{elbl}</span>
                 </div>
               );
             })}
@@ -612,31 +762,35 @@ function App() {
       </div>
 
       {/* 底部环境条 */}
-      <div style={{display:'flex',gap:0,background:'#161b22',borderTop:'1px solid #21262d',padding:'7px 20px',overflowX:'auto',flexShrink:0}}>
-        {cleanRooms.map(room=>{
-          const col = {normal:'#22c55e',warning:'#f59e0b',alarm:'#ef4444'}[room.status]||'#64748b';
+      <div style={{display:'flex',background:'#0d1117',borderTop:'1px solid #161b22',
+        padding:'6px 20px',overflowX:'auto',flexShrink:0,alignItems:'center',gap:0}}>
+        {cleanR.map(r=>{
+          const col={normal:'#22c55e',warning:'#f59e0b',alarm:'#ef4444'}[r.status]||'#64748b';
           return (
-            <div key={room.id} style={{display:'flex',alignItems:'center',gap:10,padding:'3px 18px',borderRight:'1px solid #21262d'}}>
-              <span style={{color:'#8b949e',fontSize:11}}>{room.name}</span>
-              <span style={{color:col,fontSize:12,fontWeight:700}}>{room.pressure} Pa</span>
-              <span style={{color:'#64748b',fontSize:11}}>{room.temp}℃</span>
-              <span style={{color:'#64748b',fontSize:11}}>{room.humidity}%RH</span>
+            <div key={r.id} style={{display:'flex',alignItems:'center',gap:8,
+              padding:'3px 16px',borderRight:'1px solid #161b22',flexShrink:0}}>
+              <span style={{color:'#6b7280',fontSize:11}}>{r.name}</span>
+              <span style={{color:col,fontSize:12,fontWeight:700}}>{r.pressure>0?'+':''}{r.pressure} Pa</span>
+              <span style={{color:'#374151',fontSize:11}}>{r.temp}℃</span>
+              <span style={{color:'#374151',fontSize:11}}>{r.humidity}%RH</span>
+              <span style={{color:'#1e2530',fontSize:11}}>{r.noise}dB</span>
             </div>
           );
         })}
-        <div style={{marginLeft:'auto',display:'flex',alignItems:'center'}}>
-          <span style={{color:'#30363d',fontSize:11}}>点击任意设备查看详情 · 点击传递窗启动样品传递</span>
+        <div style={{marginLeft:'auto',flexShrink:0}}>
+          <span style={{color:'#1e2530',fontSize:11}}>Mini-LIMS v3.0 · 20m×11m 图纸精准版</span>
         </div>
       </div>
 
       {/* 弹窗 */}
-      {modal && (
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}
+      {modal&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',
+          display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}
           onClick={e=>e.target===e.currentTarget&&setModal(null)}>
-          {modal.type==='room'      && <RoomPanel      room={modal.data} onClose={()=>setModal(null)}/>}
-          {modal.type==='passbox'   && <PassboxPanel   pb={modal.data}   onClose={()=>setModal(null)} onAction={handleAction}/>}
-          {modal.type==='incubator' && <IncubatorPanel inc={modal.data}  onClose={()=>setModal(null)}/>}
-          {modal.type==='autoclave' && <AutoclavePanel ac={modal.data}   onClose={()=>setModal(null)} onAction={handleAction}/>}
+          {modal.type==='room'      &&<RoomPanel   room={modal.data} onClose={()=>setModal(null)}/>}
+          {modal.type==='passbox'   &&<PassboxPanel pb={modal.data}  onClose={()=>setModal(null)} onAction={act}/>}
+          {modal.type==='incubator' &&<IncPanel     inc={modal.data} onClose={()=>setModal(null)}/>}
+          {modal.type==='autoclave' &&<AcPanel      ac={modal.data}  onClose={()=>setModal(null)} onAction={act}/>}
         </div>
       )}
     </div>
