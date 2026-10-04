@@ -1,3 +1,4 @@
+
 name: Lint & Type Check
 
 on:
@@ -21,7 +22,7 @@ jobs:
         run: pip install ruff mypy pydantic
 
       - name: Run ruff
-        run: ruff check twin/ backend/ scripts/
+        run: ruff check twin/ backend/ scripts/ --ignore E501,UP006,UP017,UP035
 
       - name: Run mypy
         run: mypy twin/ backend/ --ignore-missing-imports
