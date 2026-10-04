@@ -1,4 +1,3 @@
-
 """
 FastAPI Backend — Mini-LIMS Digital Twin Platform
 Versioned REST API + WebSocket real-time state broadcast.
@@ -53,7 +52,9 @@ app.add_middleware(
 # ── Background simulator ─────────────────────────────────────────
 async def _simulator_loop():
     """Simulate sensor readings every 2 seconds."""
-    import math, random, time
+    import math
+    import random
+    import time
     tick = 0
     while True:
         await asyncio.sleep(2)
@@ -68,7 +69,10 @@ async def _simulator_loop():
                 }
             elif asset.asset_type == "autoclave":
                 if asset.status == "RUNNING":
-                    readings = {"temperature": round(121.0 + random.uniform(-0.3, 0.3), 1), "pressure": round(1.05 + random.uniform(-0.02, 0.02), 3)}
+                    readings = {
+                        "temperature": round(121.0 + random.uniform(-0.3, 0.3), 1),
+                        "pressure": round(1.05 + random.uniform(-0.02, 0.02), 3),
+                    }
             elif asset.asset_type == "environmental_sensor":
                 base_p = {"ENV-STERILE": -15, "ENV-YANGXING": -12, "ENV-MICROBIO": -10}.get(asset.asset_id, 0)
                 readings = {
@@ -254,7 +258,10 @@ class SimulationRequest(BaseModel):
 @app.post("/api/v1/simulation/run")
 async def run_simulation(req: SimulationRequest):
     if req.scenario_id not in ScenarioEngine.SCENARIOS:
-        raise HTTPException(status_code=400, detail=f"Unknown scenario: {req.scenario_id}. Valid: {list(ScenarioEngine.SCENARIOS.keys())}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown scenario: {req.scenario_id}. Valid: {list(ScenarioEngine.SCENARIOS.keys())}",
+        )
     report = scenario_engine.run(req.scenario_id, req.params)
     return report.to_dict()
 
@@ -267,12 +274,18 @@ async def list_scenarios():
 # ── Architecture Health ──────────────────────────────────────────
 @app.get("/api/v1/architecture/health")
 async def get_architecture_health():
-    import json
+    import json as _json
     from pathlib import Path
     health_file = Path("architecture-health.json")
     if health_file.exists():
-        return json.loads(health_file.read_text())
-    return {"architecture_score": 0, "issues": 0, "warnings": 0, "critical": 0, "note": "Run architecture_audit.py to generate"}
+        return _json.loads(health_file.read_text())
+    return {
+        "architecture_score": 0,
+        "issues": 0,
+        "warnings": 0,
+        "critical": 0,
+        "note": "Run architecture_audit.py to generate",
+    }
 
 
 # ── Events ───────────────────────────────────────────────────────
@@ -282,6 +295,7 @@ async def list_events(limit: int = 100, severity: Optional[str] = None):
     return [e.dict() for e in events]
 
 
+# ── Root ─────────────────────────────────────────────────────────
 @app.get("/")
 async def root():
     return {
@@ -290,4 +304,3 @@ async def root():
         "docs": "/docs",
         "ws": "/ws/twin-state",
     }
-
