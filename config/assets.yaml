@@ -1,1 +1,248 @@
 
+# Asset Configuration — Mini-LIMS Digital Twin Platform
+# Every asset defined here will automatically create a Digital Twin object.
+# No code changes required to add new assets.
+
+version: "1.0.0"
+
+assets:
+  # ── Incubators ──────────────────────────────────────────────
+  - id: INC-01
+    name: 培养箱①
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity]
+    thresholds:
+      temperature: { min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0 }
+      humidity:    { min: 40.0, max: 80.0 }
+    metadata:
+      manufacturer: Memmert
+      model: IN55
+      serial: INC-2024-001
+      capacity_ml: 55000
+
+  - id: INC-02
+    name: 培养箱②
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity]
+    thresholds:
+      temperature: { min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0 }
+      humidity:    { min: 40.0, max: 80.0 }
+    metadata:
+      manufacturer: Memmert
+      model: IN55
+      serial: INC-2024-002
+      capacity_ml: 55000
+
+  - id: INC-03
+    name: 培养箱③
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity]
+    thresholds:
+      temperature: { min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0 }
+      humidity:    { min: 40.0, max: 80.0 }
+    metadata:
+      manufacturer: Memmert
+      model: IN110
+      serial: INC-2024-003
+      capacity_ml: 110000
+
+  - id: INC-04
+    name: 培养箱④
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity]
+    thresholds:
+      temperature: { min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0 }
+      humidity:    { min: 40.0, max: 80.0 }
+    metadata:
+      manufacturer: Memmert
+      model: IN110
+      serial: INC-2024-004
+      capacity_ml: 110000
+
+  # ── Autoclaves ──────────────────────────────────────────────
+  - id: AC-01
+    name: 灭菌锅①
+    type: autoclave
+    room: R-STERILIZE
+    sensors: [temperature, pressure]
+    thresholds:
+      temperature: { sterilize_min: 120.0, sterilize_max: 122.0 }
+      pressure:    { sterilize_min: 1.0,   sterilize_max: 1.2 }
+    metadata:
+      manufacturer: Tuttnauer
+      model: 2540EK
+      serial: AC-2024-001
+      chamber_volume_L: 40
+      cycle_time_min: 20
+
+  - id: AC-02
+    name: 灭菌锅②
+    type: autoclave
+    room: R-STERILIZE
+    sensors: [temperature, pressure]
+    thresholds:
+      temperature: { sterilize_min: 120.0, sterilize_max: 122.0 }
+      pressure:    { sterilize_min: 1.0,   sterilize_max: 1.2 }
+    metadata:
+      manufacturer: Tuttnauer
+      model: 2540EK
+      serial: AC-2024-002
+      chamber_volume_L: 40
+      cycle_time_min: 20
+
+  # ── Pass Boxes (Transfer Windows) ───────────────────────────
+  - id: PB-01
+    name: 传递窗①
+    type: pass_box
+    room: R-BUFFER-1
+    adjacent_room: R-STERILE
+    sensors: [door_a, door_b, uv_status]
+    thresholds: {}
+    metadata:
+      uv_disinfection_time_sec: 30
+      interlock: true
+
+  - id: PB-02
+    name: 传递窗②
+    type: pass_box
+    room: R-BUFFER-2
+    adjacent_room: R-YANGXING
+    sensors: [door_a, door_b, uv_status]
+    thresholds: {}
+    metadata:
+      uv_disinfection_time_sec: 30
+      interlock: true
+
+  - id: PB-03
+    name: 传递窗③
+    type: pass_box
+    room: R-BUFFER-1
+    adjacent_room: R-MICROBIO
+    sensors: [door_a, door_b, uv_status]
+    thresholds: {}
+    metadata:
+      uv_disinfection_time_sec: 30
+      interlock: true
+
+  # ── Biosafety Cabinets ──────────────────────────────────────
+  - id: BSC-01
+    name: 生物安全柜①（无菌室）
+    type: biosafety_cabinet
+    room: R-STERILE
+    sensors: [airflow, uv_status, sash_position]
+    thresholds:
+      airflow: { min: 0.3, max: 0.5 }
+    metadata:
+      class: II-A2
+      manufacturer: Esco
+      model: AC2-4S8
+
+  - id: BSC-02
+    name: 生物安全柜②（阳性对照室）
+    type: biosafety_cabinet
+    room: R-YANGXING
+    sensors: [airflow, uv_status, sash_position]
+    thresholds:
+      airflow: { min: 0.3, max: 0.5 }
+    metadata:
+      class: II-A2
+      manufacturer: Esco
+      model: AC2-4S8
+
+  # ── Environmental Sensors ───────────────────────────────────
+  - id: ENV-STERILE
+    name: 无菌室环境传感器
+    type: environmental_sensor
+    room: R-STERILE
+    sensors: [temperature, humidity, pressure, particle_count]
+    thresholds:
+      temperature: { min: 20.0, max: 25.0 }
+      humidity:    { min: 30.0, max: 65.0 }
+      pressure:    { min: -20.0, max: -8.0 }
+    metadata:
+      clean_grade: ISO-5
+
+  - id: ENV-YANGXING
+    name: 阳性对照室环境传感器
+    type: environmental_sensor
+    room: R-YANGXING
+    sensors: [temperature, humidity, pressure]
+    thresholds:
+      temperature: { min: 20.0, max: 25.0 }
+      humidity:    { min: 30.0, max: 65.0 }
+      pressure:    { min: -18.0, max: -5.0 }
+    metadata:
+      clean_grade: ISO-7
+
+  - id: ENV-MICROBIO
+    name: 微生物操作室环境传感器
+    type: environmental_sensor
+    room: R-MICROBIO
+    sensors: [temperature, humidity, pressure]
+    thresholds:
+      temperature: { min: 20.0, max: 25.0 }
+      humidity:    { min: 30.0, max: 65.0 }
+      pressure:    { min: -15.0, max: -5.0 }
+    metadata:
+      clean_grade: ISO-7
+
+  # ── Workbenches ─────────────────────────────────────────────
+  - id: WB-STERILE-01
+    name: 百级工作台（无菌室）
+    type: workbench
+    room: R-STERILE
+    sensors: [airflow]
+    thresholds:
+      airflow: { min: 0.25, max: 0.5 }
+    metadata:
+      grade: ISO-5
+      dimensions_m: "2.7 x 0.75 x 0.8"
+
+  - id: WB-YANGXING-01
+    name: 百级工作台（阳性对照室）
+    type: workbench
+    room: R-YANGXING
+    sensors: [airflow]
+    thresholds:
+      airflow: { min: 0.25, max: 0.5 }
+    metadata:
+      grade: ISO-5
+      dimensions_m: "2.7 x 0.75 x 0.8"
+
+  - id: WB-MICROBIO-01
+    name: 百级工作台（微生物操作室）
+    type: workbench
+    room: R-MICROBIO
+    sensors: [airflow]
+    thresholds:
+      airflow: { min: 0.25, max: 0.5 }
+    metadata:
+      grade: ISO-5
+      dimensions_m: "2.7 x 0.75 x 0.8"
+
+  # ── Fume Hood ───────────────────────────────────────────────
+  - id: FH-01
+    name: 通风橱（理化实验室）
+    type: fume_hood
+    room: R-CHEMISTRY
+    sensors: [airflow, sash_position]
+    thresholds:
+      airflow: { min: 0.4, max: 0.6 }
+    metadata:
+      dimensions_m: "1.5 x 0.8 x 2.3"
+
+  # ── Refrigerator ────────────────────────────────────────────
+  - id: RF-01
+    name: 冰箱（培养区）
+    type: refrigerator
+    room: R-CULTURE
+    sensors: [temperature]
+    thresholds:
+      temperature: { min: 2.0, max: 8.0, alarm_min: 1.0, alarm_max: 10.0 }
+    metadata:
+      volume_L: 300
+
