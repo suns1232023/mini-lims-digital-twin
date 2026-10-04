@@ -1,1 +1,263 @@
 
+# Workflow Configuration — Mini-LIMS Digital Twin Platform
+version: "1.0.0"
+
+workflows:
+  # ── Sample Lifecycle ─────────────────────────────────────────
+  - id: sample_lifecycle
+    name: Sample Lifecycle Workflow
+    entity_type: sample
+    initial_state: REGISTERED
+    states:
+      - REGISTERED
+      - RECEIVED
+      - PREPARED
+      - TESTING
+      - INCUBATING
+      - READING
+      - REVIEW
+      - APPROVED
+      - REJECTED
+      - REPORTED
+      - ARCHIVED
+    transitions:
+      - from: REGISTERED
+        to: RECEIVED
+        event: SAMPLE_RECEIVED
+        timeout_hours: 24
+        blocking_conditions: []
+      - from: RECEIVED
+        to: PREPARED
+        event: SAMPLE_PREPARED
+        timeout_hours: 4
+        blocking_conditions: []
+      - from: PREPARED
+        to: TESTING
+        event: SAMPLE_TESTING_STARTED
+        timeout_hours: 2
+        blocking_conditions:
+          - equipment_available
+          - test_method_assigned
+      - from: TESTING
+        to: INCUBATING
+        event: SAMPLE_INCUBATION_STARTED
+        timeout_hours: 1
+        blocking_conditions:
+          - incubator_available
+      - from: INCUBATING
+        to: READING
+        event: SAMPLE_INCUBATION_COMPLETED
+        timeout_hours: 168
+        blocking_conditions: []
+      - from: READING
+        to: REVIEW
+        event: SAMPLE_READING_COMPLETED
+        timeout_hours: 2
+        blocking_conditions: []
+      - from: REVIEW
+        to: APPROVED
+        event: SAMPLE_APPROVED
+        timeout_hours: 8
+        requires_approval: true
+        approver_role: QA
+        blocking_conditions: []
+      - from: REVIEW
+        to: REJECTED
+        event: SAMPLE_REJECTED
+        timeout_hours: 8
+        requires_approval: true
+        approver_role: QA
+        blocking_conditions: []
+      - from: APPROVED
+        to: REPORTED
+        event: SAMPLE_REPORTED
+        timeout_hours: 4
+        blocking_conditions: []
+      - from: REPORTED
+        to: ARCHIVED
+        event: SAMPLE_ARCHIVED
+        timeout_hours: 720
+        blocking_conditions: []
+      - from: REJECTED
+        to: PREPARED
+        event: SAMPLE_RETEST_INITIATED
+        timeout_hours: 24
+        blocking_conditions: []
+
+  # ── Autoclave Lifecycle ──────────────────────────────────────
+  - id: autoclave_cycle
+    name: Autoclave Sterilization Cycle
+    entity_type: asset
+    asset_types: [autoclave]
+    initial_state: IDLE
+    states:
+      - IDLE
+      - LOADING
+      - RUNNING
+      - COOLING
+      - COMPLETED
+      - RELEASED
+      - ERROR
+      - SAFE_STATE
+      - MAINTENANCE
+      - VALIDATION
+    transitions:
+      - from: IDLE
+        to: LOADING
+        event: AUTOCLAVE_LOADING_STARTED
+        blocking_conditions: []
+      - from: LOADING
+        to: RUNNING
+        event: AUTOCLAVE_STARTED
+        blocking_conditions:
+          - door_sealed
+          - cycle_selected
+      - from: RUNNING
+        to: COOLING
+        event: AUTOCLAVE_COOLING_STARTED
+        blocking_conditions:
+          - cycle_time_elapsed
+      - from: RUNNING
+        to: ERROR
+        event: AUTOCLAVE_FAILED
+        blocking_conditions: []
+      - from: COOLING
+        to: COMPLETED
+        event: AUTOCLAVE_COMPLETED
+        blocking_conditions:
+          - temperature_below_60c
+      - from: COMPLETED
+        to: RELEASED
+        event: AUTOCLAVE_RELEASED
+        blocking_conditions:
+          - operator_confirmation
+      - from: ERROR
+        to: SAFE_STATE
+        event: AUTOCLAVE_SAFE_STATE_ENTERED
+        blocking_conditions:
+          - emergency_stop_confirmed
+      - from: SAFE_STATE
+        to: MAINTENANCE
+        event: AUTOCLAVE_MAINTENANCE_STARTED
+        blocking_conditions:
+          - maintenance_team_assigned
+      - from: MAINTENANCE
+        to: VALIDATION
+        event: AUTOCLAVE_VALIDATION_STARTED
+        blocking_conditions:
+          - repair_complete
+      - from: VALIDATION
+        to: RELEASED
+        event: AUTOCLAVE_VALIDATION_PASSED
+        blocking_conditions:
+          - validation_passed
+      - from: RELEASED
+        to: IDLE
+        event: AUTOCLAVE_RESET
+        blocking_conditions: []
+
+  # ── Incubator Lifecycle ──────────────────────────────────────
+  - id: incubator_cycle
+    name: Incubator Incubation Cycle
+    entity_type: asset
+    asset_types: [incubator]
+    initial_state: IDLE
+    states:
+      - IDLE
+      - LOADED
+      - INCUBATING
+      - COMPLETED
+      - RELEASED
+      - ERROR
+      - SAFE_STATE
+    transitions:
+      - from: IDLE
+        to: LOADED
+        event: INCUBATOR_LOADED
+        blocking_conditions: []
+      - from: LOADED
+        to: INCUBATING
+        event: INCUBATOR_INCUBATION_STARTED
+        blocking_conditions:
+          - door_closed
+          - temperature_stable
+      - from: INCUBATING
+        to: COMPLETED
+        event: INCUBATOR_INCUBATION_COMPLETED
+        blocking_conditions:
+          - incubation_period_elapsed
+      - from: INCUBATING
+        to: ERROR
+        event: INCUBATOR_TEMPERATURE_EXCURSION
+        blocking_conditions: []
+      - from: COMPLETED
+        to: RELEASED
+        event: INCUBATOR_RELEASED
+        blocking_conditions:
+          - sample_removed
+      - from: RELEASED
+        to: IDLE
+        event: INCUBATOR_RESET
+        blocking_conditions: []
+      - from: ERROR
+        to: SAFE_STATE
+        event: INCUBATOR_ALARM_ACKNOWLEDGED
+        blocking_conditions: []
+      - from: SAFE_STATE
+        to: IDLE
+        event: INCUBATOR_RECOVERED
+        blocking_conditions:
+          - temperature_stable
+
+  # ── Pass Box Lifecycle ───────────────────────────────────────
+  - id: pass_box_transfer
+    name: Pass Box Transfer Workflow
+    entity_type: asset
+    asset_types: [pass_box]
+    initial_state: IDLE
+    states:
+      - IDLE
+      - LOCKED
+      - UV_DISINFECTING
+      - OPEN
+      - TRANSFERRING
+      - CLOSED
+      - INTERLOCK_ALARM
+    transitions:
+      - from: IDLE
+        to: LOCKED
+        event: TRANSFER_WINDOW_LOCKED
+        blocking_conditions: []
+      - from: LOCKED
+        to: UV_DISINFECTING
+        event: TRANSFER_WINDOW_UV_STARTED
+        blocking_conditions:
+          - both_doors_closed
+      - from: UV_DISINFECTING
+        to: OPEN
+        event: TRANSFER_WINDOW_OPENED
+        blocking_conditions:
+          - uv_cycle_complete
+      - from: OPEN
+        to: TRANSFERRING
+        event: SAMPLE_MOVED
+        blocking_conditions: []
+      - from: TRANSFERRING
+        to: CLOSED
+        event: TRANSFER_WINDOW_CLOSED
+        blocking_conditions: []
+      - from: CLOSED
+        to: IDLE
+        event: TRANSFER_WINDOW_RESET
+        blocking_conditions: []
+      - from: OPEN
+        to: INTERLOCK_ALARM
+        event: TRANSFER_WINDOW_INTERLOCK_VIOLATED
+        blocking_conditions:
+          - both_doors_open
+      - from: INTERLOCK_ALARM
+        to: IDLE
+        event: ALARM_ACKNOWLEDGED
+        blocking_conditions:
+          - operator_confirmation
+
