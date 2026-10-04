@@ -1,3 +1,4 @@
+
 name: Simulation Regression
 
 on:
@@ -18,11 +19,11 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest-json-report
+        run: pip install -r requirements.txt
 
       - name: Run simulation regression tests
+        env:
+          PYTHONPATH: .
         run: pytest tests/simulation/ -v --tb=short --json-report --json-report-file=simulation-report.json
 
       - name: Upload simulation report
