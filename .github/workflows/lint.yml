@@ -13,16 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
+          cache: pip
       - name: Install linting tools
         run: pip install ruff mypy pydantic
-
       - name: Run ruff
-        run: ruff check twin/ backend/ scripts/ --ignore E501,UP006,UP017,UP035
-
+        run: ruff check mini-lims-platform/
       - name: Run mypy
-        run: mypy twin/ backend/ --ignore-missing-imports
+        run: mypy mini-lims-platform/twin mini-lims-platform/backend --ignore-missing-imports
