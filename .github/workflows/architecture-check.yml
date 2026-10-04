@@ -16,8 +16,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: mini-lims-platform/requirements.txt
 
       - name: Install dependencies
         run: pip install pyyaml pydantic
