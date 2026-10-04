@@ -1,1 +1,83 @@
 
+# Sensor Configuration — Mini-LIMS Digital Twin Platform
+version: "1.0.0"
+
+sensor_types:
+  temperature:
+    unit: celsius
+    data_type: float
+    precision: 1
+    reporting_interval_sec: 10
+    protocol: MQTT
+
+  humidity:
+    unit: percent
+    data_type: float
+    precision: 1
+    reporting_interval_sec: 10
+    protocol: MQTT
+
+  pressure:
+    unit: pascal
+    data_type: float
+    precision: 1
+    reporting_interval_sec: 10
+    protocol: MQTT
+
+  airflow:
+    unit: m_per_s
+    data_type: float
+    precision: 2
+    reporting_interval_sec: 30
+    protocol: MQTT
+
+  door_a:
+    unit: state
+    data_type: enum
+    values: [open, closed]
+    reporting_interval_sec: 1
+    protocol: MQTT
+
+  door_b:
+    unit: state
+    data_type: enum
+    values: [open, closed]
+    reporting_interval_sec: 1
+    protocol: MQTT
+
+  uv_status:
+    unit: state
+    data_type: enum
+    values: [off, running, complete]
+    reporting_interval_sec: 1
+    protocol: MQTT
+
+  sash_position:
+    unit: cm
+    data_type: float
+    precision: 1
+    reporting_interval_sec: 5
+    protocol: MQTT
+
+  particle_count:
+    unit: particles_per_m3
+    data_type: integer
+    reporting_interval_sec: 60
+    protocol: MQTT
+
+# MQTT topic pattern: lab/{room_id}/{asset_id}/{sensor_type}
+mqtt:
+  broker: localhost
+  port: 1883
+  topic_prefix: lab
+  qos: 1
+  retain: false
+
+# Simulator settings (used when real MQTT not available)
+simulator:
+  enabled: true
+  tick_interval_sec: 2
+  noise_factor: 0.05
+  drift_factor: 0.01
+  failure_probability: 0.001
+
