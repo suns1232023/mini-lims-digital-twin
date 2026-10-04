@@ -1,1 +1,25 @@
 
+name: Lint & Type Check
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend-lint:
+    name: Python Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install linting tools
+        run: pip install ruff mypy pydantic
+      - name: Run ruff
+        run: ruff check mini-lims-platform/
+      - name: Run mypy
+        run: mypy mini-lims-platform/twin mini-lims-platform/backend --ignore-missing-imports
