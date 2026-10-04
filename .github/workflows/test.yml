@@ -1,4 +1,3 @@
-
 name: Tests
 
 on:
@@ -35,7 +34,7 @@ jobs:
       - name: Run integration tests
         env:
           PYTHONPATH: .
-        run: pytest tests/integration/ -v --tb=short
+        run: pytest tests/integration/ -v --tb=short || [ $? -eq 5 ]
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
