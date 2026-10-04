@@ -19,27 +19,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          cd mini-lims-platform
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run unit tests
-        run: |
-          cd mini-lims-platform
-          pytest tests/unit/ -v --tb=short --cov=twin --cov=backend --cov-report=xml
+        run: pytest tests/unit/ -v --tb=short --cov=twin --cov=backend --cov-report=xml
 
       - name: Run simulation tests
-        run: |
-          cd mini-lims-platform
-          pytest tests/simulation/ -v --tb=short
+        run: pytest tests/simulation/ -v --tb=short
 
       - name: Run integration tests
-        run: |
-          cd mini-lims-platform
-          pytest tests/integration/ -v --tb=short
+        run: pytest tests/integration/ -v --tb=short
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
-          file: mini-lims-platform/coverage.xml
+          file: coverage.xml
           fail_ci_if_error: false
