@@ -1,7 +1,9 @@
 [tool.ruff]
+line-length = 120
 target-version = "py311"
-line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I"] # 只开启标准错误(E)、逻辑错误(F)和导包排序(I)
-ignore = ["UP006"]       # 忽略 Dict/dict 等类型提示降级警告
+ignore = [
+    "E501",  # 忽略行过长错误
+    "UP006", # 忽略 Dict -> dict 的类型注解转换
+]
