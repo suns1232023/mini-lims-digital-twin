@@ -1,3 +1,4 @@
+
 name: Tests
 
 on:
@@ -22,12 +23,18 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run unit tests
+        env:
+          PYTHONPATH: .
         run: pytest tests/unit/ -v --tb=short --cov=twin --cov=backend --cov-report=xml
 
       - name: Run simulation tests
+        env:
+          PYTHONPATH: .
         run: pytest tests/simulation/ -v --tb=short
 
       - name: Run integration tests
+        env:
+          PYTHONPATH: .
         run: pytest tests/integration/ -v --tb=short
 
       - name: Upload coverage
