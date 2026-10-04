@@ -19,16 +19,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd mini-lims-platform
           pip install -r requirements.txt
+          pip install pytest-json-report
 
       - name: Run simulation regression tests
-        run: |
-          cd mini-lims-platform
-          pytest tests/simulation/ -v --tb=short --json-report --json-report-file=simulation-report.json
+        run: pytest tests/simulation/ -v --tb=short --json-report --json-report-file=simulation-report.json
 
       - name: Upload simulation report
         uses: actions/upload-artifact@v4
         with:
           name: simulation-report
-          path: mini-lims-platform/simulation-report.json
+          path: simulation-report.json
