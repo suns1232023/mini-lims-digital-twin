@@ -21,7 +21,7 @@ jobs:
         run: pip install ruff mypy pydantic
 
       - name: Run ruff
-        run: ruff check mini-lims-platform/
+        run: ruff check twin/ backend/ scripts/
 
       - name: Run mypy
-        run: mypy mini-lims-platform/twin mini-lims-platform/backend --ignore-missing-imports
+        run: mypy twin/ backend/ --ignore-missing-imports
