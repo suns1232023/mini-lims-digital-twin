@@ -1,1 +1,176 @@
 
+version: "1.0.0"
+project: mini-lims-digital-twin
+repository: https://github.com/suns1232023/mini-lims-digital-twin
+philosophy: "MODEL → GENERATE → TEST → SIMULATE → AUDIT → IMPROVE"
+
+layers:
+  - id: L1
+    name: Presentation Layer
+    technology: [Vue3, TypeScript, Vite, SVG, TailwindCSS]
+    responsibility: observe_state_only
+    source_of_truth: false
+
+  - id: L2
+    name: Digital Twin Core
+    technology: [Python, Pydantic]
+    responsibility: centralized_state_engine
+    source_of_truth: true
+
+  - id: L3
+    name: LIMS Domain Layer
+    technology: [Python, SQLAlchemy]
+    responsibility: sample_lifecycle
+
+  - id: L4
+    name: Workflow Engine
+    technology: [Python]
+    responsibility: state_machine_workflows
+
+  - id: L5
+    name: Event Engine
+    technology: [Python, PostgreSQL]
+    responsibility: immutable_event_store
+
+  - id: L6
+    name: Rules Engine
+    technology: [Python, YAML]
+    responsibility: declarative_rules
+
+  - id: L7
+    name: Simulation Engine
+    technology: [Python]
+    responsibility: deterministic_scenarios
+
+  - id: L8
+    name: Data Layer
+    technology: [PostgreSQL, TimescaleDB, Redis]
+    responsibility: persistence
+
+  - id: L9
+    name: Integration Layer
+    technology: [FastAPI, WebSocket, MQTT]
+    responsibility: external_interfaces
+
+  - id: L10
+    name: Automated Test Layer
+    technology: [Pytest, Vitest, Playwright]
+    responsibility: continuous_validation
+
+  - id: L11
+    name: Architecture Governance Layer
+    technology: [Python]
+    responsibility: architecture_health_measurement
+
+  - id: L12
+    name: AI-Assisted Improvement Layer
+    technology: [YAML, Markdown]
+    responsibility: recommendations_only_human_approval_required
+
+asset_types:
+  - incubator
+  - autoclave
+  - biosafety_cabinet
+  - pass_box
+  - environmental_sensor
+  - workbench
+  - fume_hood
+  - refrigerator
+  - pure_water_system
+  - eyewash_station
+
+state_machines:
+  autoclave:
+    states: [IDLE, LOADING, RUNNING, COOLING, COMPLETED, RELEASED, ERROR, SAFE_STATE, MAINTENANCE, VALIDATION]
+    initial: IDLE
+    failure_path: [RUNNING, ERROR, SAFE_STATE, MAINTENANCE, VALIDATION, RELEASED]
+
+  incubator:
+    states: [IDLE, LOADED, INCUBATING, COMPLETED, RELEASED, ERROR]
+    initial: IDLE
+
+  pass_box:
+    states: [IDLE, LOCKED, UV_DISINFECTING, OPEN, TRANSFERRING, CLOSED]
+    initial: IDLE
+
+  sample:
+    states: [REGISTERED, RECEIVED, PREPARED, TESTING, INCUBATING, READING, REVIEW, APPROVED, REPORTED, ARCHIVED, REJECTED]
+    initial: REGISTERED
+
+api_version: v1
+api_base: /api/v1
+
+endpoints:
+  - GET /assets
+  - GET /assets/{id}
+  - GET /assets/{id}/events
+  - GET /assets/{id}/state
+  - GET /samples
+  - GET /samples/{id}
+  - GET /samples/{id}/thread
+  - GET /workflows/{id}
+  - POST /simulation/run
+  - GET /simulation/{id}
+  - GET /architecture/health
+
+simulation_scenarios:
+  - id: A
+    name: Normal laboratory operation
+  - id: B
+    name: Incubator temperature excursion
+  - id: C
+    name: Pass-box interlock violation
+  - id: D
+    name: Autoclave failure
+  - id: E
+    name: Sensor failure
+  - id: F
+    name: Environmental excursion
+  - id: G
+    name: Sample workflow timeout
+  - id: H
+    name: Equipment unavailable
+  - id: I
+    name: Recovery after failure
+
+migration_phases:
+  - phase: 1
+    name: Extract domain model
+    status: in_progress
+  - phase: 2
+    name: Create Digital Twin state engine
+    status: in_progress
+  - phase: 3
+    name: Create event engine
+    status: planned
+  - phase: 4
+    name: Create workflow engine
+    status: planned
+  - phase: 5
+    name: Create configuration-driven model
+    status: planned
+  - phase: 6
+    name: Move frontend to Vue/TypeScript
+    status: planned
+  - phase: 7
+    name: Add FastAPI
+    status: planned
+  - phase: 8
+    name: Add simulation engine
+    status: planned
+  - phase: 9
+    name: Add automated tests
+    status: planned
+  - phase: 10
+    name: Add GitHub CI
+    status: planned
+  - phase: 11
+    name: Add architecture audit
+    status: planned
+  - phase: 12
+    name: Add AI architecture feedback interface
+    status: planned
+  - phase: 13
+    name: Add Three.js 3D visualization
+    status: planned
+
