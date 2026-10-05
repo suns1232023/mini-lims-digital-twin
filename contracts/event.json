@@ -1,1 +1,23 @@
 
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/suns1232023/mini-lims-digital-twin/contracts/event.json",
+  "title": "DigitalTwinEvent",
+  "description": "Schema for all Digital Twin events. Frontend and backend must validate against this.",
+  "type": "object",
+  "required": ["event_id", "timestamp", "event_type", "source", "asset_id", "severity", "correlation_id"],
+  "properties": {
+    "event_id":       { "type": "string", "format": "uuid" },
+    "timestamp":      { "type": "string", "format": "date-time" },
+    "event_type":     { "type": "string", "minLength": 1 },
+    "source":         { "type": "string", "enum": ["iot_gateway","api","workflow_engine","rules_engine","simulator","twin_engine","architecture_audit"] },
+    "asset_id":       { "type": "string", "minLength": 1 },
+    "sample_id":      { "type": ["string", "null"] },
+    "previous_state": { "type": "object" },
+    "new_state":      { "type": "object" },
+    "payload":        { "type": "object" },
+    "severity":       { "type": "string", "enum": ["INFO","WARNING","ALARM","CRITICAL"] },
+    "correlation_id": { "type": "string", "format": "uuid" }
+  },
+  "additionalProperties": false
+}
