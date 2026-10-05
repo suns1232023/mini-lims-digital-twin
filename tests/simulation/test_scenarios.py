@@ -1,4 +1,3 @@
-
 """
 Simulation Tests — All 9 Scenarios (A-I)
 Every scenario becomes a regression test.
@@ -10,7 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from simulation.scenarios.engine import ScenarioEngine, SimulationReport
+# ✅ 修正了这里的模块导入路径
+from simulation.scenarios.scenario_engine import ScenarioEngine, SimulationReport
 
 
 @pytest.fixture
