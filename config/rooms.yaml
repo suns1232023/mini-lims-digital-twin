@@ -1,120 +1,61 @@
 
 # Room Configuration — Mini-LIMS Digital Twin Platform
 version: "1.0.0"
-
 rooms:
-  # ── Clean Zone (洁净控制区) ──────────────────────────────────
   - id: R-STERILE
     name: 无菌室
     zone: clean
     bsl_level: BSL-2
     clean_grade: ISO-7
-    workbench_grade: ISO-5
     area_sqm: 9.0
-    dimensions_m: "3.0 x 3.0"
-    pressure_pa: { nominal: -15, min: -20, max: -8 }
-    temperature_c: { min: 20, max: 25 }
-    humidity_pct: { min: 30, max: 65 }
-    noise_db_max: 45
-    adjacent_rooms: [R-BUFFER-1]
-    pass_boxes: [PB-01]
+    pressure_pa: {nominal: -15, min: -20, max: -8}
+    temperature_c: {min: 20, max: 25}
+    humidity_pct: {min: 30, max: 65}
 
   - id: R-YANGXING
     name: 阳性对照操作室
     zone: clean
     bsl_level: BSL-2
     clean_grade: ISO-7
-    workbench_grade: ISO-5
     area_sqm: 9.6
-    dimensions_m: "3.0 x 3.2"
-    pressure_pa: { nominal: -12, min: -18, max: -5 }
-    temperature_c: { min: 20, max: 25 }
-    humidity_pct: { min: 30, max: 65 }
-    noise_db_max: 45
-    adjacent_rooms: [R-BUFFER-2]
-    pass_boxes: [PB-02]
+    pressure_pa: {nominal: -12, min: -18, max: -5}
+    temperature_c: {min: 20, max: 25}
+    humidity_pct: {min: 30, max: 65}
 
   - id: R-MICROBIO
     name: 微生物操作室
     zone: clean
     bsl_level: BSL-1
     clean_grade: ISO-7
-    workbench_grade: ISO-5
     area_sqm: 9.0
-    dimensions_m: "3.0 x 3.0"
-    pressure_pa: { nominal: -10, min: -15, max: -5 }
-    temperature_c: { min: 20, max: 25 }
-    humidity_pct: { min: 30, max: 65 }
-    noise_db_max: 45
-    adjacent_rooms: [R-BUFFER-1]
-    pass_boxes: [PB-03]
+    pressure_pa: {nominal: -10, min: -15, max: -5}
+    temperature_c: {min: 20, max: 25}
+    humidity_pct: {min: 30, max: 65}
 
-  # ── Buffer Zone (缓冲间) ─────────────────────────────────────
   - id: R-BUFFER-1
     name: 缓冲间①
     zone: buffer
-    clean_grade: ISO-8
     area_sqm: 6.0
-    dimensions_m: "2.0 x 3.0"
-    pressure_pa: { nominal: -5, min: -10, max: 0 }
-    adjacent_rooms: [R-STERILE, R-MICROBIO, R-CHANGE-1]
+    pressure_pa: {nominal: -5, min: -10, max: 0}
 
   - id: R-BUFFER-2
     name: 缓冲间②
     zone: buffer
-    clean_grade: ISO-8
     area_sqm: 6.4
-    dimensions_m: "2.0 x 3.2"
-    pressure_pa: { nominal: -5, min: -10, max: 0 }
-    adjacent_rooms: [R-YANGXING, R-CHANGE-2]
+    pressure_pa: {nominal: -5, min: -10, max: 0}
 
-  # ── Change Zone (更衣区) ─────────────────────────────────────
-  - id: R-CHANGE-1
-    name: 一更
-    zone: change
-    area_sqm: 4.5
-    dimensions_m: "2.5 x 1.8"
-    pressure_pa: { nominal: 0 }
-    adjacent_rooms: [R-BUFFER-1, R-CHANGE-2]
-
-  - id: R-CHANGE-2
-    name: 二更
-    zone: change
-    area_sqm: 4.5
-    dimensions_m: "2.5 x 1.8"
-    pressure_pa: { nominal: -2, min: -5, max: 0 }
-    adjacent_rooms: [R-CHANGE-1, R-BUFFER-2]
-
-  # ── Support Zone (辅助区) ────────────────────────────────────
   - id: R-CULTURE
     name: 培养区
     zone: support
     area_sqm: 52.5
-    dimensions_m: "7.0 x 7.5"
-    temperature_c: { min: 15, max: 30 }
-    humidity_pct: { min: 30, max: 70 }
-    adjacent_rooms: [R-HVAC]
-
-  - id: R-HVAC
-    name: 空调过滤器房
-    zone: support
-    area_sqm: 24.5
-    dimensions_m: "7.0 x 3.5"
-    pressure_pa: { nominal: 2 }
-
-  - id: R-CHEMISTRY
-    name: 理化实验室
-    zone: support
-    area_sqm: 52.0
-    dimensions_m: "8.0 x 6.5"
-    temperature_c: { min: 18, max: 28 }
-    humidity_pct: { min: 30, max: 70 }
+    temperature_c: {min: 15, max: 30}
 
   - id: R-STERILIZE
     name: 灭菌区
     zone: support
     area_sqm: 36.0
-    dimensions_m: "8.0 x 4.5"
-    temperature_c: { min: 15, max: 35 }
 
-
+  - id: R-CHEMISTRY
+    name: 理化实验室
+    zone: support
+    area_sqm: 52.0
