@@ -1,17 +1,16 @@
 
 """
 Architecture Audit Script — Mini-LIMS Digital Twin Platform
-Evaluates: schema consistency, workflow transitions, orphan assets,
-undefined states, missing tests, API contracts, configuration completeness.
+Computes architecture health score dynamically from actual checks.
+Score is NEVER hard-coded. Every point is earned or deducted from real checks.
 Produces: architecture-health.json
 """
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 try:
     import yaml
@@ -19,208 +18,319 @@ except ImportError:
     print("ERROR: pyyaml not installed. Run: pip install pyyaml")
     sys.exit(1)
 
-BASE = Path(__file__).parent.parent
+# Root is the directory containing this script's parent (scripts/../)
+ROOT = Path(__file__).parent.parent
 
 
-def load_yaml(path: Path) -> Dict:
+def load_yaml(path: Path) -> dict:
     if not path.exists():
         return {}
     with open(path) as f:
         return yaml.safe_load(f) or {}
 
 
-def check_config_files() -> Tuple[List[str], List[str]]:
+def load_arch() -> dict:
+    return load_yaml(ROOT / "architecture.yaml")
+
+
+# ── Individual Checks ─────────────────────────────────────────────────────────
+
+def check_architecture_yaml() -> tuple[list[str], list[str], int]:
+    """Check architecture.yaml exists and has required sections."""
     issues, warnings = [], []
-    required = ["assets.yaml", "rooms.yaml", "workflows.yaml", "rules.yaml", "thresholds.yaml", "sensors.yaml"]
-    for fname in required:
-        p = BASE / "config" / fname
-        if not p.exists():
-            issues.append(f"Missing config file: config/{fname}")
+    score = 0
+    arch_path = ROOT / "architecture.yaml"
+    if not arch_path.exists():
+        issues.append("CRITICAL: architecture.yaml not found — architecture contract missing")
+        return issues, warnings, score
+    arch = load_arch()
+    required_sections = ["version", "project", "domains", "entities", "state_machines",
+                         "simulation_scenarios", "quality_gates", "constraints"]
+    for section in required_sections:
+        if section not in arch:
+            warnings.append(f"architecture.yaml missing section: {section!r}")
         else:
-            try:
-                data = load_yaml(p)
-                if not data:
-                    warnings.append(f"Empty config file: config/{fname}")
-            except Exception as e:
-                issues.append(f"Invalid YAML in config/{fname}: {e}")
-    return issues, warnings
+            score += 1
+    return issues, warnings, score
 
 
-def check_asset_room_references() -> Tuple[List[str], List[str]]:
+def check_domain_files() -> tuple[list[str], list[str], int]:
+    """Check all required domain files exist."""
     issues, warnings = [], []
-    assets_cfg = load_yaml(BASE / "config" / "assets.yaml")
-    rooms_cfg = load_yaml(BASE / "config" / "rooms.yaml")
-    room_ids = {r["id"] for r in rooms_cfg.get("rooms", [])}
-    for asset in assets_cfg.get("assets", []):
-        room = asset.get("room")
-        if room and room not in room_ids:
-            issues.append(f"Asset {asset['id']} references undefined room: {room}")
-        if not asset.get("id"):
-            issues.append(f"Asset missing 'id' field: {asset}")
-        if not asset.get("type"):
-            issues.append(f"Asset {asset.get('id', '?')} missing 'type' field")
-    return issues, warnings
+    score = 0
+    arch = load_arch()
+    for domain in arch.get("domains", []):
+        domain_id = domain.get("id", "?")
+        for required_file in domain.get("required_files", []):
+            path = ROOT / required_file
+            if path.exists():
+                score += 1
+            else:
+                issues.append(f"Missing required file [{domain_id}]: {required_file}")
+    return issues, warnings, score
 
 
-def check_workflow_transitions() -> Tuple[List[str], List[str]]:
+def check_state_machines() -> tuple[list[str], list[str], int]:
+    """Validate state machine definitions: reachability, error paths, transitions."""
     issues, warnings = [], []
-    wf_cfg = load_yaml(BASE / "config" / "workflows.yaml")
-    for wf in wf_cfg.get("workflows", []):
-        wf_id = wf.get("id", "?")
-        states = set(wf.get("states", []))
-        initial = wf.get("initial_state")
+    score = 0
+    arch = load_arch()
+    for machine_id, defn in arch.get("state_machines", {}).items():
+        states = set(defn.get("states", []))
+        initial = defn.get("initial")
+        transitions = defn.get("transitions", [])
+        error_states = set(defn.get("error_states", []))
+
+        if not initial:
+            issues.append(f"State machine {machine_id!r}: missing initial state")
+            continue
         if initial not in states:
-            issues.append(f"Workflow {wf_id}: initial_state '{initial}' not in states list")
-        reachable = {initial}
-        for t in wf.get("transitions", []):
-            from_s, to_s = t.get("from"), t.get("to")
-            if from_s not in states:
-                issues.append(f"Workflow {wf_id}: transition from undefined state '{from_s}'")
-            if to_s not in states:
-                issues.append(f"Workflow {wf_id}: transition to undefined state '{to_s}'")
-            if from_s in reachable:
-                reachable.add(to_s)
-        unreachable = states - reachable
+            issues.append(f"State machine {machine_id!r}: initial state {initial!r} not in states")
+            continue
+
+        # Build reachability via BFS
+        allowed: dict[str, list[str]] = {}
+        for t in transitions:
+            allowed.setdefault(t["from"], []).append(t["to"])
+            # Validate states exist
+            if t["from"] not in states:
+                issues.append(f"State machine {machine_id!r}: transition from undefined state {t['from']!r}")
+            if t["to"] not in states:
+                issues.append(f"State machine {machine_id!r}: transition to undefined state {t['to']!r}")
+
+        visited: set[str] = set()
+        queue = [initial]
+        while queue:
+            current = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+            for nxt in allowed.get(current, []):
+                if nxt not in visited:
+                    queue.append(nxt)
+
+        unreachable = states - visited
         for s in unreachable:
-            warnings.append(f"Workflow {wf_id}: state '{s}' may be unreachable from initial state")
-        # Check for missing error transitions
-        has_error = any(t.get("to") == "ERROR" for t in wf.get("transitions", []))
-        if not has_error and wf_id not in ("pass_box_transfer",):
-            warnings.append(f"Workflow {wf_id}: no ERROR transition defined (missing failure mode)")
-    return issues, warnings
+            warnings.append(f"State machine {machine_id!r}: state {s!r} is unreachable from initial")
+
+        # Check error transitions exist
+        has_error_path = any(t["to"] in error_states for t in transitions)
+        if error_states and not has_error_path:
+            warnings.append(f"State machine {machine_id!r}: error states defined but no transitions lead to them")
+        elif error_states and has_error_path:
+            score += 2  # Bonus for having error paths
+
+        score += 1  # Base score for valid state machine
+    return issues, warnings, score
 
 
-def check_rules_completeness() -> Tuple[List[str], List[str]]:
+def check_contracts() -> tuple[list[str], list[str], int]:
+    """Check JSON Schema contracts exist and are valid JSON."""
     issues, warnings = [], []
-    rules_cfg = load_yaml(BASE / "config" / "rules.yaml")
-    rule_ids = set()
-    for rule in rules_cfg.get("rules", []):
-        rid = rule.get("rule_id")
-        if not rid:
-            issues.append("Rule missing 'rule_id' field")
-            continue
-        if rid in rule_ids:
-            issues.append(f"Duplicate rule_id: {rid}")
-        rule_ids.add(rid)
-        if not rule.get("condition"):
-            issues.append(f"Rule {rid}: missing 'condition'")
-        if not rule.get("actions"):
-            warnings.append(f"Rule {rid}: no actions defined")
-        if not rule.get("severity"):
-            warnings.append(f"Rule {rid}: no severity defined")
-    return issues, warnings
-
-
-def check_test_coverage() -> Tuple[List[str], List[str]]:
-    issues, warnings = [], []
-    test_dirs = {
-        "unit": BASE / "tests" / "unit",
-        "integration": BASE / "tests" / "integration",
-        "simulation": BASE / "tests" / "simulation",
-        "regression": BASE / "tests" / "regression",
-    }
-    for name, path in test_dirs.items():
+    score = 0
+    arch = load_arch()
+    required = arch.get("quality_gates", {}).get("required_contracts", [
+        "contracts/asset.json", "contracts/event.json",
+        "contracts/sample.json", "contracts/workflow.json", "contracts/simulation.json",
+    ])
+    for contract_path in required:
+        path = ROOT / contract_path
         if not path.exists():
-            warnings.append(f"Test directory missing: tests/{name}/")
+            issues.append(f"Missing contract: {contract_path}")
             continue
-        test_files = list(path.glob("test_*.py"))
-        if not test_files:
-            warnings.append(f"No test files found in tests/{name}/")
-    # Check for specific required test files
-    required_tests = [
-        "tests/unit/test_incubator_twin.py",
-        "tests/unit/test_rules_engine.py",
-        "tests/unit/test_workflow_engine.py",
-        "tests/simulation/test_scenarios.py",
-    ]
-    for t in required_tests:
-        if not (BASE / t).exists():
-            warnings.append(f"Missing required test file: {t}")
-    return issues, warnings
-
-
-def check_api_structure() -> Tuple[List[str], List[str]]:
-    issues, warnings = [], []
-    api_main = BASE / "backend" / "api" / "v1" / "main.py"
-    if not api_main.exists():
-        issues.append("Missing FastAPI main: backend/api/v1/main.py")
-    else:
-        content = api_main.read_text()
-        required_endpoints = ["/api/v1/assets", "/api/v1/samples", "/api/v1/simulation/run", "/api/v1/architecture/health"]
-        for ep in required_endpoints:
-            if ep not in content:
-                warnings.append(f"API endpoint may be missing: {ep}")
-    return issues, warnings
-
-
-def check_twin_core() -> Tuple[List[str], List[str]]:
-    issues, warnings = [], []
-    required_files = [
-        "twin/entities/base.py",
-        "twin/entities/incubator.py",
-        "twin/entities/autoclave.py",
-        "twin/entities/pass_box.py",
-        "twin/registry/asset_registry.py",
-        "backend/core/event_engine.py",
-        "backend/core/rules_engine.py",
-        "backend/core/workflow_engine.py",
-        "simulation/scenarios/scenario_engine.py",
-    ]
-    for f in required_files:
-        if not (BASE / f).exists():
-            issues.append(f"Missing core file: {f}")
-    return issues, warnings
-
-
-def check_ci_workflows() -> Tuple[List[str], List[str]]:
-    issues, warnings = [], []
-    required_workflows = ["test.yml", "lint.yml", "architecture-check.yml", "simulation.yml"]
-    ci_dir = BASE / ".github" / "workflows"
-    if not ci_dir.exists():
-        issues.append("Missing .github/workflows/ directory")
-        return issues, warnings
-    for wf in required_workflows:
-        if not (ci_dir / wf).exists():
-            warnings.append(f"Missing CI workflow: .github/workflows/{wf}")
-    return issues, warnings
-
-
-def compute_score(all_issues: List[str], all_warnings: List[str], critical_count: int) -> int:
-    score = 100
-    score -= len(all_issues) * 5
-    score -= len(all_warnings) * 2
-    score -= critical_count * 15
-    return max(0, min(100, score))
-
-
-def run_audit() -> Dict[str, Any]:
-    all_issues: List[str] = []
-    all_warnings: List[str] = []
-    critical_count = 0
-    checks = [
-        ("Config Files", check_config_files),
-        ("Asset-Room References", check_asset_room_references),
-        ("Workflow Transitions", check_workflow_transitions),
-        ("Rules Completeness", check_rules_completeness),
-        ("Test Coverage", check_test_coverage),
-        ("API Structure", check_api_structure),
-        ("Twin Core Files", check_twin_core),
-        ("CI Workflows", check_ci_workflows),
-    ]
-    check_results = {}
-    for name, fn in checks:
         try:
-            issues, warnings = fn()
+            import json as _json
+            data = _json.loads(path.read_text())
+            if "$schema" not in data:
+                warnings.append(f"Contract {contract_path}: missing $schema field")
+            if "required" not in data and data.get("type") == "object":
+                warnings.append(f"Contract {contract_path}: no required fields defined")
+            score += 2
+        except Exception as e:
+            issues.append(f"Contract {contract_path}: invalid JSON — {e}")
+    return issues, warnings, score
+
+
+def check_tests() -> tuple[list[str], list[str], int]:
+    """Check required test files exist and contain actual test functions."""
+    issues, warnings = [], []
+    score = 0
+    arch = load_arch()
+    required_tests = arch.get("quality_gates", {}).get("required_test_files", [
+        "tests/unit/test_state_machines.py",
+        "tests/unit/test_event_model.py",
+        "tests/unit/test_asset_registry.py",
+        "tests/simulation/test_scenarios.py",
+    ])
+    for test_path in required_tests:
+        path = ROOT / test_path
+        if not path.exists():
+            issues.append(f"Missing required test file: {test_path}")
+            continue
+        content = path.read_text()
+        test_count = content.count("def test_")
+        if test_count == 0:
+            warnings.append(f"Test file {test_path}: no test functions found")
+        else:
+            score += min(test_count, 5)  # Up to 5 points per test file
+    return issues, warnings, score
+
+
+def check_ci_workflows() -> tuple[list[str], list[str], int]:
+    """Check GitHub Actions workflow files exist and have correct structure."""
+    issues, warnings = [], []
+    score = 0
+    arch = load_arch()
+    required_workflows = arch.get("quality_gates", {}).get("required_workflows",
+        [".github/workflows/test.yml", ".github/workflows/architecture.yml",
+         ".github/workflows/simulation.yml", ".github/workflows/build.yml"])
+    for wf_path in required_workflows:
+        path = ROOT / wf_path
+        if not path.exists():
+            issues.append(f"Missing CI workflow: {wf_path}")
+            continue
+        try:
+            wf = load_yaml(path)
+            if "jobs" not in wf:
+                warnings.append(f"Workflow {wf_path}: no jobs defined")
+            else:
+                score += 2
+            # Check for forbidden patterns
+            content = path.read_text()
+            if "mini-lims-platform" in content:
+                issues.append(f"Workflow {wf_path}: contains forbidden path 'mini-lims-platform'")
+            if "cache: pip" in content and "cache-dependency-path" not in content:
+                warnings.append(f"Workflow {wf_path}: cache: pip without cache-dependency-path")
+        except Exception as e:
+            warnings.append(f"Workflow {wf_path}: parse error — {e}")
+    return issues, warnings, score
+
+
+def check_no_hardcoded_values() -> tuple[list[str], list[str], int]:
+    """Check source files for forbidden patterns."""
+    issues, warnings = [], []
+    score = 10  # Start with full score, deduct for violations
+    forbidden_patterns = [
+        ("score = 94", "Hard-coded architecture score"),
+        ("score = 100", "Hard-coded architecture score"),
+        ("localhost:8000", "Hard-coded localhost URL in source"),
+        ("password", "Possible credential in source"),
+        ("secret", "Possible secret in source"),
+    ]
+    source_dirs = [ROOT / "twin", ROOT / "simulation", ROOT / "scripts", ROOT / "backend"]
+    for src_dir in source_dirs:
+        if not src_dir.exists():
+            continue
+        for py_file in src_dir.rglob("*.py"):
+            content = py_file.read_text().lower()
+            for pattern, description in forbidden_patterns:
+                if pattern.lower() in content and "test" not in str(py_file):
+                    issues.append(f"{description} in {py_file.relative_to(ROOT)}")
+                    score -= 2
+    return issues, warnings, max(0, score)
+
+
+def check_pyproject_toml() -> tuple[list[str], list[str], int]:
+    """Check pyproject.toml exists and has required sections."""
+    issues, warnings = [], []
+    score = 0
+    path = ROOT / "pyproject.toml"
+    if not path.exists():
+        issues.append("Missing pyproject.toml — dependency management not configured")
+        return issues, warnings, score
+    content = path.read_text()
+    for section in ["[project]", "[tool.ruff]", "[tool.mypy]", "[tool.pytest"]:
+        if section in content:
+            score += 1
+        else:
+            warnings.append(f"pyproject.toml missing section: {section}")
+    return issues, warnings, score
+
+
+def check_architecture_constraints() -> tuple[list[str], list[str], int]:
+    """Check architecture constraints from architecture.yaml."""
+    issues, warnings = [], []
+    score = 0
+    arch = load_arch()
+    constraints = arch.get("constraints", [])
+    if not constraints:
+        warnings.append("No architecture constraints defined in architecture.yaml")
+        return issues, warnings, score
+    # Check UI-not-source-of-truth constraint
+    frontend_dir = ROOT / "frontend"
+    if frontend_dir.exists():
+        for py_file in frontend_dir.rglob("*.py"):
+            content = py_file.read_text()
+            if "business_logic" in content or "state_machine" in content:
+                issues.append(f"Possible business logic in frontend: {py_file.relative_to(ROOT)}")
+    score += len(constraints)  # Points for having constraints defined
+    return issues, warnings, score
+
+
+# ── Score Computation ─────────────────────────────────────────────────────────
+
+def compute_score(
+    all_issues: list[str],
+    all_warnings: list[str],
+    raw_score: int,
+    max_possible: int,
+) -> int:
+    """Compute final score 0-100 from raw score, issues, and warnings."""
+    if max_possible == 0:
+        return 0
+    base = int((raw_score / max_possible) * 100)
+    # Deduct for issues and warnings
+    deductions = len(all_issues) * 5 + len(all_warnings) * 2
+    final = max(0, min(100, base - deductions))
+    return final
+
+
+# ── Main Audit ────────────────────────────────────────────────────────────────
+
+def run_audit() -> dict[str, Any]:
+    all_issues: list[str] = []
+    all_warnings: list[str] = []
+    raw_score = 0
+    max_possible = 0
+    check_results: dict[str, Any] = {}
+
+    checks = [
+        ("Architecture YAML",       check_architecture_yaml,    20),
+        ("Domain Files",            check_domain_files,         30),
+        ("State Machines",          check_state_machines,       20),
+        ("JSON Contracts",          check_contracts,            15),
+        ("Test Coverage",           check_tests,                25),
+        ("CI Workflows",            check_ci_workflows,         10),
+        ("No Hard-coded Values",    check_no_hardcoded_values,  10),
+        ("pyproject.toml",          check_pyproject_toml,        5),
+        ("Architecture Constraints",check_architecture_constraints, 5),
+    ]
+
+    for name, fn, weight in checks:
+        try:
+            issues, warnings, score = fn()
             all_issues.extend(issues)
             all_warnings.extend(warnings)
-            check_results[name] = {"issues": issues, "warnings": warnings}
+            raw_score += score
+            max_possible += weight
+            check_results[name] = {
+                "issues": issues,
+                "warnings": warnings,
+                "score": score,
+                "weight": weight,
+            }
         except Exception as e:
-            all_issues.append(f"Audit check '{name}' failed: {e}")
-            check_results[name] = {"issues": [str(e)], "warnings": []}
+            all_issues.append(f"Audit check {name!r} raised exception: {e}")
+            check_results[name] = {"issues": [str(e)], "warnings": [], "score": 0, "weight": weight}
+            max_possible += weight
 
-    score = compute_score(all_issues, all_warnings, critical_count)
-    health = {
-        "architecture_score": score,
+    critical_count = sum(1 for i in all_issues if i.startswith("CRITICAL"))
+    final_score = compute_score(all_issues, all_warnings, raw_score, max_possible)
+
+    return {
+        "architecture_score": final_score,
+        "raw_score": raw_score,
+        "max_possible": max_possible,
         "issues": len(all_issues),
         "warnings": len(all_warnings),
         "critical": critical_count,
@@ -228,8 +338,8 @@ def run_audit() -> Dict[str, Any]:
         "all_issues": all_issues,
         "all_warnings": all_warnings,
         "generated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        "note": "Score computed dynamically from actual checks — never hard-coded",
     }
-    return health
 
 
 if __name__ == "__main__":
@@ -237,10 +347,11 @@ if __name__ == "__main__":
     print("Mini-LIMS Architecture Audit")
     print("=" * 60)
     health = run_audit()
-    out_path = BASE / "architecture-health.json"
+    out_path = ROOT / "architecture-health.json"
     with open(out_path, "w") as f:
         json.dump(health, f, indent=2, ensure_ascii=False)
     print(f"\nArchitecture Score : {health['architecture_score']}/100")
+    print(f"Raw Score          : {health['raw_score']}/{health['max_possible']}")
     print(f"Issues             : {health['issues']}")
     print(f"Warnings           : {health['warnings']}")
     print(f"Critical           : {health['critical']}")
@@ -254,4 +365,3 @@ if __name__ == "__main__":
             print(f"  ⚠ {w}")
     print(f"\nReport saved to: {out_path}")
     sys.exit(1 if health["critical"] > 0 else 0)
-
