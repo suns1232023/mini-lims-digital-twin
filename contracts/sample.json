@@ -1,1 +1,21 @@
 
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/suns1232023/mini-lims-digital-twin/contracts/sample.json",
+  "title": "LIMSSample",
+  "type": "object",
+  "required": ["sample_id", "current_state"],
+  "properties": {
+    "sample_id":    { "type": "string", "minLength": 1 },
+    "barcode":      { "type": ["string","null"] },
+    "current_state":{ "type": "string", "enum": ["REGISTERED","RECEIVED","PREPARED","TESTING","INCUBATING","READING","REVIEW","APPROVED","REJECTED","REPORTED","ARCHIVED"] },
+    "customer_id":  { "type": ["string","null"] },
+    "product_id":   { "type": ["string","null"] },
+    "batch_id":     { "type": ["string","null"] },
+    "test_method_id":{ "type": ["string","null"] },
+    "operator_id":  { "type": ["string","null"] },
+    "equipment_id": { "type": ["string","null"] },
+    "created_at":   { "type": "string" },
+    "updated_at":   { "type": "string" }
+  }
+}
