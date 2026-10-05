@@ -1,7 +1,6 @@
-
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "mini-lims-digital-twin"
@@ -12,8 +11,6 @@ dependencies = [
     "pydantic>=2.7.0",
     "pyyaml>=6.0.1",
     "jsonschema>=4.22.0",
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.29.0",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +26,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["twin*", "simulation*", "backend*", "scripts*"]
+include = ["twin*", "simulation*", "scripts*"]
 
 [tool.ruff]
 line-length = 120
