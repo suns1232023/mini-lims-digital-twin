@@ -69,4 +69,3 @@ jobs:
               sys.exit(1)
           print(f'PASS: All {len(list(contracts_dir.glob(\"*.json\")))} contracts valid')
           "
-
