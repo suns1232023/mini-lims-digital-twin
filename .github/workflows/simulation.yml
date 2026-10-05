@@ -22,7 +22,9 @@ jobs:
         run: python -m pip install --upgrade pip setuptools wheel
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: |
+          pip install pydantic pyyaml jsonschema \
+            pytest pytest-asyncio pytest-json-report
 
       - name: Run simulation regression tests
         env:
@@ -31,7 +33,7 @@ jobs:
           pytest tests/simulation/ -v --tb=short \
             --json-report --json-report-file=simulation-report.json
 
-      - name: Validate all 9 scenarios passed
+      - name: Validate all scenarios passed
         run: |
           python -c "
           import json, sys
