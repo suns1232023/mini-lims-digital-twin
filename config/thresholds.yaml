@@ -1,108 +1,61 @@
 
 # Thresholds Configuration — Mini-LIMS Digital Twin Platform
 version: "1.0.0"
-
-# Global defaults by asset type (overridden by asset-specific config)
 defaults:
   incubator:
     temperature:
-      warning_low:  35.0
+      warning_low: 35.0
       warning_high: 39.0
-      alarm_low:    34.0
-      alarm_high:   40.0
+      alarm_low: 34.0
+      alarm_high: 40.0
       unit: celsius
     humidity:
-      warning_low:  40.0
+      warning_low: 40.0
       warning_high: 80.0
       unit: percent
-
   autoclave:
     temperature:
       sterilize_nominal: 121.0
-      sterilize_min:     120.0
-      sterilize_max:     122.0
+      sterilize_min: 120.0
+      sterilize_max: 122.0
       unit: celsius
     pressure:
       sterilize_nominal: 1.05
-      sterilize_min:     1.0
-      sterilize_max:     1.2
+      sterilize_min: 1.0
+      sterilize_max: 1.2
       unit: bar
-
   environmental_sensor:
-    clean_room_iso7:
-      pressure:
-        alarm_low:   -20.0
-        warning_low: -15.0
-        nominal:     -12.0
-        warning_high: -8.0
-        alarm_high:   -5.0
-        unit: pascal
-      temperature:
-        alarm_low:   18.0
-        warning_low: 20.0
-        nominal:     22.0
-        warning_high: 25.0
-        alarm_high:   27.0
-        unit: celsius
-      humidity:
-        alarm_low:   25.0
-        warning_low: 30.0
-        nominal:     50.0
-        warning_high: 65.0
-        alarm_high:   70.0
-        unit: percent
-
-  refrigerator:
+    pressure:
+      alarm_low: -20.0
+      warning_low: -15.0
+      nominal: -12.0
+      warning_high: -8.0
+      alarm_high: -5.0
+      unit: pascal
     temperature:
-      alarm_low:   1.0
-      warning_low: 2.0
-      nominal:     5.0
-      warning_high: 8.0
-      alarm_high:   10.0
+      alarm_low: 18.0
+      warning_low: 20.0
+      nominal: 22.0
+      warning_high: 25.0
+      alarm_high: 27.0
       unit: celsius
-
-  biosafety_cabinet:
-    airflow:
-      alarm_low:   0.25
-      warning_low: 0.30
-      nominal:     0.40
-      warning_high: 0.50
-      alarm_high:   0.55
-      unit: m_per_s
-
-  workbench:
-    airflow:
-      alarm_low:   0.20
-      warning_low: 0.25
-      nominal:     0.35
-      warning_high: 0.50
-      alarm_high:   0.55
-      unit: m_per_s
-
-  fume_hood:
-    airflow:
-      alarm_low:   0.35
-      warning_low: 0.40
-      nominal:     0.50
-      warning_high: 0.60
-      alarm_high:   0.65
-      unit: m_per_s
-
-# Sensor timeout thresholds
+    humidity:
+      alarm_low: 25.0
+      warning_low: 30.0
+      nominal: 50.0
+      warning_high: 65.0
+      alarm_high: 70.0
+      unit: percent
 sensor_timeout:
-  critical_assets: 60    # seconds — incubators, autoclaves, env sensors
-  standard_assets: 300   # seconds — workbenches, fume hoods
-
-# Workflow timeouts (hours)
+  critical_assets: 60
+  standard_assets: 300
 workflow_timeouts:
   sample_registered_to_received: 24
-  sample_received_to_prepared:   4
-  sample_prepared_to_testing:    2
-  sample_testing_to_incubating:  1
-  sample_incubating_to_reading:  168
-  sample_reading_to_review:      2
-  sample_review_to_decision:     8
-  sample_approved_to_reported:   4
-  sample_reported_to_archived:   720
-  alarm_acknowledgement:         30   # minutes before escalation
-
+  sample_received_to_prepared: 4
+  sample_prepared_to_testing: 2
+  sample_testing_to_incubating: 1
+  sample_incubating_to_reading: 168
+  sample_reading_to_review: 2
+  sample_review_to_decision: 8
+  sample_approved_to_reported: 4
+  alarm_acknowledgement_minutes: 30
