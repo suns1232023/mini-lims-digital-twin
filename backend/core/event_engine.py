@@ -1,151 +1,246 @@
 
 """
-Event Engine — Centralized event processing and broadcast.
-Every meaningful state change must generate an event through this engine.
+Simulation Engine — Deterministic scenario execution (A-I).
+Every scenario produces a machine-readable report.
+No randomness unless seeded. Results are reproducible.
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Set
-
-from twin.entities.base import EventRecord
+from typing import Any, Optional
 
 
-class EventEngine:
-    """
-    Central event bus for the Digital Twin platform.
-    - Receives events from all sources (IoT, API, workflow engine, rules engine)
-    - Stores events immutably
-    - Broadcasts to WebSocket subscribers
-    - Supports correlation_id-based traceability
-    """
+def utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-    def __init__(self):
-        self._store: List[EventRecord] = []
-        self._subscribers: Set[asyncio.Queue] = set()
-        self._handlers: Dict[str, List[Callable]] = {}
 
-    # ── Event Publishing ─────────────────────────────────────────
+class SimulationReport:
+    """Machine-readable simulation report."""
 
-    async def publish(self, event: EventRecord) -> None:
-        """Publish an event to the store and all subscribers."""
-        self._store.append(event)
-        await self._broadcast(event)
-        await self._dispatch_handlers(event)
+    def __init__(self, scenario_id: str, scenario_name: str, seed: int = 42):
+        self.run_id = str(uuid.uuid4())
+        self.scenario_id = scenario_id
+        self.scenario_name = scenario_name
+        self.seed = seed
+        self.started_at = utcnow()
+        self.completed_at: Optional[str] = None
+        self.event_sequence: list[dict[str, Any]] = []
+        self.state_transitions: list[dict[str, Any]] = []
+        self.alarms: list[dict[str, Any]] = []
+        self.affected_samples: list[str] = []
+        self.workflow_impact: list[dict[str, Any]] = []
+        self.recovery_path: list[str] = []
+        self.final_state: dict[str, Any] = {}
+        self.passed: bool = False
 
-    async def publish_raw(
-        self,
-        event_type: str,
-        source: str,
-        asset_id: str,
-        severity: str = "INFO",
-        sample_id: Optional[str] = None,
-        previous_state: Optional[Dict] = None,
-        new_state: Optional[Dict] = None,
-        payload: Optional[Dict] = None,
-        correlation_id: Optional[str] = None,
-    ) -> EventRecord:
-        """Create and publish an event from raw parameters."""
-        event = EventRecord(
-            event_type=event_type,
-            source=source,
-            asset_id=asset_id,
-            sample_id=sample_id,
-            previous_state=previous_state or {},
-            new_state=new_state or {},
-            payload=payload or {},
-            severity=severity,
-            correlation_id=correlation_id or str(uuid.uuid4()),
-        )
-        await self.publish(event)
-        return event
+    def add_event(self, event_type: str, asset_id: str,
+                  payload: Optional[dict] = None, severity: str = "INFO") -> None:
+        self.event_sequence.append({
+            "ts": utcnow(), "event_type": event_type,
+            "asset_id": asset_id, "severity": severity,
+            "payload": payload or {},
+        })
 
-    # ── WebSocket Broadcast ──────────────────────────────────────
+    def add_transition(self, asset_id: str, from_state: str, to_state: str) -> None:
+        self.state_transitions.append({
+            "ts": utcnow(), "asset_id": asset_id,
+            "from": from_state, "to": to_state,
+        })
 
-    def subscribe(self) -> asyncio.Queue:
-        """Register a new WebSocket subscriber. Returns a queue."""
-        q: asyncio.Queue = asyncio.Queue(maxsize=100)
-        self._subscribers.add(q)
-        return q
+    def add_alarm(self, rule_id: str, asset_id: str, message: str, severity: str) -> None:
+        self.alarms.append({
+            "ts": utcnow(), "rule_id": rule_id,
+            "asset_id": asset_id, "message": message, "severity": severity,
+        })
 
-    def unsubscribe(self, q: asyncio.Queue) -> None:
-        self._subscribers.discard(q)
+    def finalize(self, final_state: dict[str, Any], passed: bool = True) -> None:
+        self.completed_at = utcnow()
+        self.final_state = final_state
+        self.passed = passed
 
-    async def _broadcast(self, event: EventRecord) -> None:
-        """Broadcast event to all WebSocket subscribers."""
-        payload = json.dumps({
-            "event_id": event.event_id,
-            "timestamp": event.timestamp.isoformat(),
-            "event_type": event.event_type,
-            "source": event.source,
-            "asset_id": event.asset_id,
-            "sample_id": event.sample_id,
-            "severity": event.severity,
-            "new_state": event.new_state,
-            "correlation_id": event.correlation_id,
-        }, ensure_ascii=False)
-
-        dead = set()
-        for q in self._subscribers:
-            try:
-                q.put_nowait(payload)
-            except asyncio.QueueFull:
-                dead.add(q)
-        self._subscribers -= dead
-
-    # ── Event Handlers ───────────────────────────────────────────
-
-    def on(self, event_type: str, handler: Callable) -> None:
-        """Register a handler for a specific event type."""
-        self._handlers.setdefault(event_type, []).append(handler)
-
-    async def _dispatch_handlers(self, event: EventRecord) -> None:
-        handlers = self._handlers.get(event.event_type, [])
-        handlers += self._handlers.get("*", [])  # wildcard handlers
-        for handler in handlers:
-            try:
-                if asyncio.iscoroutinefunction(handler):
-                    await handler(event)
-                else:
-                    handler(event)
-            except Exception as e:
-                print(f"[EventEngine] Handler error for {event.event_type}: {e}")
-
-    # ── Query ────────────────────────────────────────────────────
-
-    def get_events(
-        self,
-        asset_id: Optional[str] = None,
-        sample_id: Optional[str] = None,
-        event_type: Optional[str] = None,
-        severity: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        limit: int = 100,
-    ) -> List[EventRecord]:
-        events = self._store
-        if asset_id:
-            events = [e for e in events if e.asset_id == asset_id]
-        if sample_id:
-            events = [e for e in events if e.sample_id == sample_id]
-        if event_type:
-            events = [e for e in events if e.event_type == event_type]
-        if severity:
-            events = [e for e in events if e.severity == severity]
-        if correlation_id:
-            events = [e for e in events if e.correlation_id == correlation_id]
-        return events[-limit:]
-
-    def reconstruct_thread(self, sample_id: str) -> List[EventRecord]:
-        """Reconstruct the complete digital thread for a sample."""
-        return [e for e in self._store if e.sample_id == sample_id]
-
-    def get_stats(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
-            "total_events": len(self._store),
-            "subscribers": len(self._subscribers),
-            "event_types": list({e.event_type for e in self._store}),
+            "run_id": self.run_id,
+            "scenario_id": self.scenario_id,
+            "scenario_name": self.scenario_name,
+            "seed": self.seed,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "passed": self.passed,
+            "summary": {
+                "total_events": len(self.event_sequence),
+                "total_transitions": len(self.state_transitions),
+                "total_alarms": len(self.alarms),
+                "affected_samples": len(self.affected_samples),
+            },
+            "event_sequence": self.event_sequence,
+            "state_transitions": self.state_transitions,
+            "alarms": self.alarms,
+            "affected_samples": self.affected_samples,
+            "workflow_impact": self.workflow_impact,
+            "recovery_path": self.recovery_path,
+            "final_state": self.final_state,
         }
 
+
+class ScenarioEngine:
+    """Runs deterministic simulation scenarios A-I."""
+
+    SCENARIOS: dict[str, str] = {
+        "A": "Normal laboratory operation",
+        "B": "Incubator temperature excursion",
+        "C": "Pass-box interlock violation",
+        "D": "Autoclave failure",
+        "E": "Sensor failure",
+        "F": "Environmental excursion",
+        "G": "Sample workflow timeout",
+        "H": "Equipment unavailable",
+        "I": "Recovery after failure",
+    }
+
+    def run(self, scenario_id: str, params: Optional[dict] = None, seed: int = 42) -> SimulationReport:
+        name = self.SCENARIOS.get(scenario_id, f"Scenario {scenario_id}")
+        report = SimulationReport(scenario_id=scenario_id, scenario_name=name, seed=seed)
+        params = params or {}
+        runner = getattr(self, f"_scenario_{scenario_id.lower()}", self._scenario_unknown)
+        runner(report, params)
+        return report
+
+    def _scenario_a(self, r: SimulationReport, p: dict) -> None:
+        """A: Normal laboratory operation — no alarms expected."""
+        r.add_event("INCUBATOR_LOADED", "INC-01", {"sample_id": "SMP-0001"})
+        r.add_transition("INC-01", "IDLE", "LOADED")
+        r.add_event("INCUBATOR_INCUBATION_STARTED", "INC-01", {"temperature": 37.0})
+        r.add_transition("INC-01", "LOADED", "INCUBATING")
+        for i in range(3):
+            import math
+            temp = 37.0 + math.sin(i * 0.5) * 0.15
+            r.add_event("INCUBATOR_TEMPERATURE_CHANGED", "INC-01", {"temperature": round(temp, 2)})
+        r.add_event("INCUBATOR_INCUBATION_COMPLETED", "INC-01")
+        r.add_transition("INC-01", "INCUBATING", "COMPLETED")
+        r.add_event("AUTOCLAVE_STARTED", "AC-01", {"cycle": "gravity_121C"})
+        r.add_transition("AC-01", "IDLE", "RUNNING")
+        r.add_event("AUTOCLAVE_COMPLETED", "AC-01", {"cycle_total": 1})
+        r.add_transition("AC-01", "RUNNING", "COMPLETED")
+        r.affected_samples = ["SMP-0001"]
+        r.finalize({"INC-01": "COMPLETED", "AC-01": "COMPLETED", "alarms": 0}, passed=True)
+
+    def _scenario_b(self, r: SimulationReport, p: dict) -> None:
+        """B: Incubator temperature excursion."""
+        target_temp = p.get("target_temperature", 42.0)
+        r.add_event("INCUBATOR_LOADED", "INC-02", {"sample_id": "SMP-0002"})
+        r.add_transition("INC-02", "IDLE", "LOADED")
+        r.add_event("INCUBATOR_INCUBATION_STARTED", "INC-02", {"temperature": 37.0})
+        r.add_transition("INC-02", "LOADED", "INCUBATING")
+        for i in range(3):
+            temp = 37.0 + (target_temp - 37.0) * (i + 1) / 3
+            r.add_event("INCUBATOR_TEMPERATURE_CHANGED", "INC-02", {"temperature": round(temp, 2)})
+        r.add_alarm("INC_TEMP_HIGH", "INC-02",
+                    f"Temperature {target_temp}°C exceeds alarm limit 40°C", "ALARM")
+        r.add_event("INCUBATOR_TEMPERATURE_EXCURSION", "INC-02",
+                    {"temperature": target_temp}, "ALARM")
+        r.add_transition("INC-02", "INCUBATING", "ERROR")
+        r.affected_samples = ["SMP-0002"]
+        r.workflow_impact = [{"sample_id": "SMP-0002", "impact": "WORKFLOW_BLOCKED",
+                               "reason": "temperature_excursion"}]
+        r.recovery_path = ["ERROR", "SAFE_STATE", "IDLE"]
+        r.finalize({"INC-02": "ERROR", "alarms": 1, "affected_samples": ["SMP-0002"]}, passed=True)
+
+    def _scenario_c(self, r: SimulationReport, p: dict) -> None:
+        """C: Pass-box interlock violation."""
+        r.add_event("TRANSFER_WINDOW_LOCKED", "PB-01")
+        r.add_transition("PB-01", "IDLE", "LOCKED")
+        r.add_event("TRANSFER_WINDOW_UV_STARTED", "PB-01")
+        r.add_transition("PB-01", "LOCKED", "UV_DISINFECTING")
+        r.add_event("TRANSFER_WINDOW_OPENED", "PB-01", {"door": "door_a"})
+        r.add_transition("PB-01", "UV_DISINFECTING", "OPEN")
+        r.add_event("TRANSFER_WINDOW_INTERLOCK_VIOLATED", "PB-01",
+                    {"door_a": "open", "door_b": "open"}, "CRITICAL")
+        r.add_alarm("PB_INTERLOCK_VIOLATION", "PB-01",
+                    "Both doors open simultaneously — interlock violated", "CRITICAL")
+        r.add_transition("PB-01", "OPEN", "INTERLOCK_ALARM")
+        r.recovery_path = ["INTERLOCK_ALARM", "IDLE"]
+        r.finalize({"PB-01": "INTERLOCK_ALARM", "alarms": 1}, passed=True)
+
+    def _scenario_d(self, r: SimulationReport, p: dict) -> None:
+        """D: Autoclave failure during cycle."""
+        r.add_event("AUTOCLAVE_STARTED", "AC-01", {"temperature": 121.0})
+        r.add_transition("AC-01", "IDLE", "RUNNING")
+        r.add_event("AUTOCLAVE_TELEMETRY_UPDATED", "AC-01", {"temperature": 121.0, "pressure": 1.05})
+        r.add_event("AUTOCLAVE_TELEMETRY_UPDATED", "AC-01", {"temperature": 118.0, "pressure": 0.8})
+        r.add_alarm("AC_TEMP_EXCURSION", "AC-01",
+                    "Temperature 118°C below sterilization minimum 120°C", "CRITICAL")
+        r.add_event("AUTOCLAVE_FAILED", "AC-01", {"temperature": 118.0}, "CRITICAL")
+        r.add_transition("AC-01", "RUNNING", "ERROR")
+        r.add_event("AUTOCLAVE_SAFE_STATE_ENTERED", "AC-01")
+        r.add_transition("AC-01", "ERROR", "SAFE_STATE")
+        r.recovery_path = ["ERROR", "SAFE_STATE", "MAINTENANCE", "VALIDATION", "RELEASED"]
+        r.finalize({"AC-01": "SAFE_STATE", "alarms": 1}, passed=True)
+
+    def _scenario_e(self, r: SimulationReport, p: dict) -> None:
+        """E: Sensor failure (timeout)."""
+        r.add_event("TELEMETRY_UPDATED", "ENV-STERILE", {"temperature": 22.0, "pressure": -15.0})
+        r.add_event("TELEMETRY_UPDATED", "ENV-STERILE", {"temperature": 22.0, "pressure": -15.0})
+        r.add_alarm("SENSOR_FAILURE", "ENV-STERILE",
+                    "Sensor ENV-STERILE has not reported for 65s", "CRITICAL")
+        r.add_event("SENSOR_FAILURE", "ENV-STERILE", {"last_reading_age_sec": 65}, "CRITICAL")
+        r.recovery_path = ["sensor_replaced", "SENSOR_RECOVERED"]
+        r.finalize({"ENV-STERILE": "FAILED", "alarms": 1}, passed=True)
+
+    def _scenario_f(self, r: SimulationReport, p: dict) -> None:
+        """F: Environmental excursion (pressure)."""
+        target_pressure = p.get("target_pressure", -3.0)
+        for pressure in [-15.0, -12.0, -8.0, -5.0, target_pressure]:
+            r.add_event("TELEMETRY_UPDATED", "ENV-STERILE", {"pressure": pressure})
+        r.add_alarm("ENV_PRESSURE_ALARM", "ENV-STERILE",
+                    f"Room R-STERILE pressure {target_pressure} Pa out of range", "ALARM")
+        r.add_event("PRESSURE_EXCURSION", "ENV-STERILE", {"pressure": target_pressure}, "ALARM")
+        r.affected_samples = ["SMP-0003", "SMP-0004"]
+        r.workflow_impact = [
+            {"sample_id": s, "impact": "WORKFLOW_BLOCKED", "reason": "environmental_excursion"}
+            for s in r.affected_samples
+        ]
+        r.finalize({"ENV-STERILE": "ALARM", "alarms": 1,
+                    "affected_samples": r.affected_samples}, passed=True)
+
+    def _scenario_g(self, r: SimulationReport, p: dict) -> None:
+        """G: Sample workflow timeout."""
+        r.add_event("SAMPLE_RECEIVED", "LIMS", {"sample_id": "SMP-0005"})
+        r.add_event("SAMPLE_PREPARED", "LIMS", {"sample_id": "SMP-0005"})
+        r.add_alarm("SAMPLE_WORKFLOW_TIMEOUT", "LIMS",
+                    "Sample SMP-0005 in TESTING for 3h (limit: 2h)", "ALARM")
+        r.add_event("WORKFLOW_BLOCKED", "LIMS",
+                    {"sample_id": "SMP-0005", "state": "TESTING", "age_hours": 3}, "ALARM")
+        r.affected_samples = ["SMP-0005"]
+        r.recovery_path = ["WORKFLOW_RELEASED", "TESTING", "INCUBATING"]
+        r.finalize({"SMP-0005": "BLOCKED_IN_TESTING", "alarms": 1}, passed=True)
+
+    def _scenario_h(self, r: SimulationReport, p: dict) -> None:
+        """H: Equipment unavailable."""
+        r.add_event("INCUBATOR_INCUBATION_STARTED", "INC-03")
+        r.add_transition("INC-03", "IDLE", "INCUBATING")
+        r.add_event("WORKFLOW_BLOCKED", "LIMS",
+                    {"sample_id": "SMP-0006", "reason": "no_incubator_available"}, "WARNING")
+        r.add_alarm("EQUIPMENT_UNAVAILABLE", "LIMS",
+                    "No incubator available for SMP-0006", "WARNING")
+        r.affected_samples = ["SMP-0006"]
+        r.workflow_impact = [{"sample_id": "SMP-0006", "impact": "WORKFLOW_BLOCKED",
+                               "reason": "equipment_unavailable"}]
+        r.finalize({"SMP-0006": "BLOCKED_WAITING_EQUIPMENT", "alarms": 1}, passed=True)
+
+    def _scenario_i(self, r: SimulationReport, p: dict) -> None:
+        """I: Recovery after failure."""
+        r.add_event("INCUBATOR_ALARM_ACKNOWLEDGED", "INC-02", {"operator": "QA-001"})
+        r.add_transition("INC-02", "ERROR", "SAFE_STATE")
+        r.add_event("INCUBATOR_RECOVERED", "INC-02", {"temperature": 37.0})
+        r.add_transition("INC-02", "SAFE_STATE", "IDLE")
+        r.add_event("ALARM_RESOLVED", "INC-02", {"rule_id": "INC_TEMP_HIGH"})
+        r.add_event("WORKFLOW_RELEASED", "LIMS", {"sample_id": "SMP-0002"})
+        r.recovery_path = ["ERROR", "SAFE_STATE", "IDLE", "LOADED", "INCUBATING"]
+        r.finalize({"INC-02": "IDLE", "alarms": 0, "SMP-0002": "WORKFLOW_RELEASED"}, passed=True)
+
+    def _scenario_unknown(self, r: SimulationReport, p: dict) -> None:
+        r.add_event("SIMULATION_ERROR", "SYSTEM",
+                    {"reason": f"Unknown scenario {r.scenario_id}"}, "WARNING")
+        r.finalize({"error": "unknown_scenario"}, passed=False)
