@@ -1,1 +1,72 @@
 
+name: Build & Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install ruff mypy pydantic pyyaml
+
+      - name: Run ruff
+        run: ruff check twin/ simulation/ scripts/ --ignore E501,E401,UP006,UP007,UP017,UP035
+
+      - name: Run mypy
+        env:
+          PYTHONPATH: .
+        run: mypy twin simulation scripts --ignore-missing-imports --explicit-package-bases
+
+  contract-validation:
+    name: Validate JSON Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install jsonschema
+        run: pip install jsonschema
+
+      - name: Validate all contracts are valid JSON Schema
+        run: |
+          python -c "
+          import json, sys
+          from pathlib import Path
+          contracts_dir = Path('contracts')
+          if not contracts_dir.exists():
+              print('FAIL: contracts/ directory not found')
+              sys.exit(1)
+          errors = []
+          for f in contracts_dir.glob('*.json'):
+              try:
+                  data = json.loads(f.read_text())
+                  if '\$schema' not in data:
+                      errors.append(f'{f.name}: missing \$schema')
+                  else:
+                      print(f'OK: {f.name}')
+              except json.JSONDecodeError as e:
+                  errors.append(f'{f.name}: invalid JSON — {e}')
+          if errors:
+              for e in errors:
+                  print(f'ERROR: {e}')
+              sys.exit(1)
+          print(f'PASS: All {len(list(contracts_dir.glob(\"*.json\")))} contracts valid')
+          "
+
