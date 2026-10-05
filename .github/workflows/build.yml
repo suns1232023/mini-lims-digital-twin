@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint-and-typecheck:
-    name: Lint & Type Check
+    name: Python Lint & Type Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,12 +62,12 @@ jobs:
           for f in contracts_dir.glob('*.json'):
               try:
                   data = json.loads(f.read_text())
-                  if '$schema' not in data:
-                      errors.append(f'{f.name}: missing $schema')
+                  if '\$schema' not in data and '$schema' not in data:
+                      errors.append(f'{f.name}: missing schema')
                   else:
                       print(f'OK: {f.name}')
               except json.JSONDecodeError as e:
-                  errors.append(f'{f.name}: invalid JSON — {e}')
+                  errors.append(f'{f.name}: invalid JSON')
           if errors:
               for e in errors:
                   print(f'ERROR: {e}')
