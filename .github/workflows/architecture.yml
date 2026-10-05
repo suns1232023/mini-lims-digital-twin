@@ -37,13 +37,11 @@ jobs:
               h = json.load(f)
           print(f'Architecture Score: {h[\"architecture_score\"]}/100')
           print(f'Issues: {h[\"issues\"]}  Warnings: {h[\"warnings\"]}  Critical: {h[\"critical\"]}')
-          print(f'Note: {h.get(\"note\", \"\")}')
           if h['critical'] > 0:
               print('FAIL: Critical architecture issues found')
               sys.exit(1)
-          min_score = 70
-          if h['architecture_score'] < min_score:
-              print(f'FAIL: Score {h[\"architecture_score\"]} below minimum {min_score}')
+          if h['architecture_score'] < 70:
+              print(f'FAIL: Score below minimum 70')
               sys.exit(1)
           print('PASS: Architecture health check passed')
           "
