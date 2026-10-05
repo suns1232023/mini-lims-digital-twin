@@ -1,15 +1,10 @@
 
-"""
-Pass Box (Transfer Window) Digital Twin Entity
-Normal: IDLE → LOCKED → UV_DISINFECTING → OPEN → TRANSFERRING → CLOSED → IDLE
-Interlock: OPEN + both_doors_open → INTERLOCK_ALARM
-"""
+"""Pass Box (Transfer Window) Digital Twin Entity with interlock detection."""
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from .base import DigitalTwinEntity, EventRecord, utcnow
 
-
-VALID_TRANSITIONS = {
+VALID_TRANSITIONS: dict[str, list[str]] = {
     "IDLE":            ["LOCKED"],
     "LOCKED":          ["UV_DISINFECTING", "IDLE"],
     "UV_DISINFECTING": ["OPEN"],
@@ -18,8 +13,7 @@ VALID_TRANSITIONS = {
     "CLOSED":          ["IDLE"],
     "INTERLOCK_ALARM": ["IDLE"],
 }
-
-EVENT_MAP = {
+EVENT_MAP: dict[str, str] = {
     "LOCKED":          "TRANSFER_WINDOW_LOCKED",
     "UV_DISINFECTING": "TRANSFER_WINDOW_UV_STARTED",
     "OPEN":            "TRANSFER_WINDOW_OPENED",
@@ -36,7 +30,6 @@ class PassBoxTwin(DigitalTwinEntity):
     door_b: str = "closed"
     uv_status: str = "off"
     adjacent_room_id: Optional[str] = None
-    uv_disinfection_time_sec: int = 30
     interlock_enabled: bool = True
 
     def transition(
@@ -45,23 +38,17 @@ class PassBoxTwin(DigitalTwinEntity):
         source: str = "workflow_engine",
         sample_id: Optional[str] = None,
         correlation_id: Optional[str] = None,
-        payload: Optional[Dict] = None,
+        payload: Optional[dict] = None,
     ) -> EventRecord:
         allowed = VALID_TRANSITIONS.get(self.status, [])
         if target_state not in allowed:
             raise ValueError(
-                f"Invalid transition {self.status} → {target_state} "
+                f"Invalid transition {self.status!r} → {target_state!r} "
                 f"for {self.asset_id}. Allowed: {allowed}"
             )
-        # Interlock check
-        if target_state == "OPEN" and self.interlock_enabled:
-            if self.door_a == "open" and self.door_b == "open":
-                target_state = "INTERLOCK_ALARM"
-
         previous = self.status
         self.status = target_state
-        self.updated_at = utcnow()
-
+        self.updated_at = utcnow().isoformat()
         if target_state == "UV_DISINFECTING":
             self.uv_status = "running"
         elif target_state == "OPEN":
@@ -70,14 +57,12 @@ class PassBoxTwin(DigitalTwinEntity):
             self.uv_status = "off"
             self.door_a = "closed"
             self.door_b = "closed"
-
         self.current_state.update({
             "status": self.status,
             "door_a": self.door_a,
             "door_b": self.door_b,
             "uv_status": self.uv_status,
         })
-
         severity = "CRITICAL" if target_state == "INTERLOCK_ALARM" else "INFO"
         return self.emit_event(
             event_type=EVENT_MAP.get(target_state, "PASS_BOX_STATE_CHANGED"),
@@ -90,13 +75,12 @@ class PassBoxTwin(DigitalTwinEntity):
             correlation_id=correlation_id,
         )
 
-    def update_telemetry(self, readings: Dict[str, Any]) -> EventRecord:
+    def update_telemetry(self, readings: dict[str, Any]) -> EventRecord:
         self.door_a = readings.get("door_a", self.door_a)
         self.door_b = readings.get("door_b", self.door_b)
         self.uv_status = readings.get("uv_status", self.uv_status)
-        # Auto-detect interlock violation
         if self.interlock_enabled and self.door_a == "open" and self.door_b == "open":
-            if self.status not in ("INTERLOCK_ALARM",):
+            if self.status != "INTERLOCK_ALARM":
                 self.status = "INTERLOCK_ALARM"
                 return self.emit_event(
                     event_type="TRANSFER_WINDOW_INTERLOCK_VIOLATED",
@@ -109,12 +93,10 @@ class PassBoxTwin(DigitalTwinEntity):
             "uv_status": self.uv_status,
             "status": self.status,
         })
-        self.last_telemetry_at = utcnow()
-        self.updated_at = utcnow()
+        self.last_telemetry_at = utcnow().isoformat()
+        self.updated_at = utcnow().isoformat()
         return self.emit_event(
             event_type="PASS_BOX_TELEMETRY_UPDATED",
             source="iot_gateway",
             new_state=self.current_state.copy(),
-            severity="INFO",
         )
-
