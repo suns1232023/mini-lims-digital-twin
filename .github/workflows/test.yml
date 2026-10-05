@@ -1,3 +1,4 @@
+
 name: Tests
 
 on:
@@ -7,8 +8,8 @@ on:
     branches: [main, develop]
 
 jobs:
-  backend-unit-tests:
-    name: Backend Unit & Simulation Tests
+  unit-and-simulation-tests:
+    name: Unit & Simulation Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,12 +20,12 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -e ".[dev]"
 
       - name: Run unit tests
         env:
           PYTHONPATH: .
-        run: pytest tests/unit/ -v --tb=short --cov=twin --cov=backend --cov-report=xml
+        run: pytest tests/unit/ -v --tb=short --cov=twin --cov=simulation --cov-report=xml
 
       - name: Run simulation tests
         env:
@@ -34,7 +35,7 @@ jobs:
       - name: Run integration tests
         env:
           PYTHONPATH: .
-        run: pytest tests/integration/ -v --tb=short || [ $? -eq 5 ]
+        run: pytest tests/integration/ -v --tb=short
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
