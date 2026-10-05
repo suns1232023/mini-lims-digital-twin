@@ -1,165 +1,53 @@
 
 # Rules Configuration — Mini-LIMS Digital Twin Platform
-# Rules are evaluated by the Rules Engine independently of UI.
-# Add new rules here without code changes.
 version: "1.0.0"
-
 rules:
-  # ── Incubator Rules ──────────────────────────────────────────
   - rule_id: INC_TEMP_HIGH
     name: Incubator Temperature High Alarm
     asset_types: [incubator]
-    condition: "temperature > thresholds.temperature.alarm_max"
+    condition: "temperature > alarm_max"
     severity: ALARM
-    actions:
-      - create_alarm
-      - mark_excursion
-      - identify_affected_samples
-      - notify_qa
-    message: "Incubator {asset_id} temperature {value}°C exceeds alarm limit {limit}°C"
+    actions: [create_alarm, mark_excursion, identify_affected_samples, notify_qa]
 
   - rule_id: INC_TEMP_LOW
     name: Incubator Temperature Low Alarm
     asset_types: [incubator]
-    condition: "temperature < thresholds.temperature.alarm_min"
+    condition: "temperature < alarm_min"
     severity: ALARM
-    actions:
-      - create_alarm
-      - mark_excursion
-      - identify_affected_samples
-      - notify_qa
-    message: "Incubator {asset_id} temperature {value}°C below alarm limit {limit}°C"
+    actions: [create_alarm, mark_excursion, identify_affected_samples, notify_qa]
 
-  - rule_id: INC_TEMP_WARNING_HIGH
-    name: Incubator Temperature High Warning
-    asset_types: [incubator]
-    condition: "temperature > thresholds.temperature.max AND temperature <= thresholds.temperature.alarm_max"
-    severity: WARNING
-    actions:
-      - create_alarm
-    message: "Incubator {asset_id} temperature {value}°C approaching alarm limit"
-
-  - rule_id: INC_DOOR_OPEN
-    name: Incubator Door Open During Incubation
-    asset_types: [incubator]
-    condition: "door == 'open' AND status == 'INCUBATING'"
-    severity: WARNING
-    actions:
-      - create_alarm
-      - log_event
-    message: "Incubator {asset_id} door opened during active incubation"
-
-  # ── Autoclave Rules ──────────────────────────────────────────
-  - rule_id: AC_TEMP_EXCURSION
-    name: Autoclave Temperature Excursion During Cycle
-    asset_types: [autoclave]
-    condition: "status == 'RUNNING' AND (temperature < thresholds.temperature.sterilize_min OR temperature > thresholds.temperature.sterilize_max)"
-    severity: CRITICAL
-    actions:
-      - create_alarm
-      - trigger_safe_state
-      - notify_qa
-      - notify_maintenance
-    message: "Autoclave {asset_id} temperature {value}°C out of sterilization range during cycle"
-
-  - rule_id: AC_PRESSURE_EXCURSION
-    name: Autoclave Pressure Excursion
-    asset_types: [autoclave]
-    condition: "status == 'RUNNING' AND pressure > thresholds.pressure.sterilize_max"
-    severity: CRITICAL
-    actions:
-      - create_alarm
-      - trigger_safe_state
-    message: "Autoclave {asset_id} pressure {value} bar exceeds safe limit"
-
-  # ── Pass Box Rules ───────────────────────────────────────────
   - rule_id: PB_INTERLOCK_VIOLATION
     name: Pass Box Interlock Violation
     asset_types: [pass_box]
-    condition: "door_a == 'open' AND door_b == 'open'"
+    condition: "door_a == open AND door_b == open"
     severity: CRITICAL
-    actions:
-      - create_alarm
-      - lock_both_doors
-      - notify_qa
-      - log_event
-    message: "Pass box {asset_id} interlock violation: both doors open simultaneously"
+    actions: [create_alarm, lock_both_doors, notify_qa]
 
-  # ── Environmental Rules ──────────────────────────────────────
   - rule_id: ENV_PRESSURE_ALARM
     name: Clean Room Pressure Alarm
     asset_types: [environmental_sensor]
     rooms: [R-STERILE, R-YANGXING, R-MICROBIO]
-    condition: "pressure > thresholds.pressure.max OR pressure < thresholds.pressure.min"
+    condition: "pressure > alarm_max"
     severity: ALARM
-    actions:
-      - create_alarm
-      - notify_qa
-      - identify_affected_samples
-    message: "Room {room_id} pressure {value} Pa out of range [{min}, {max}] Pa"
+    actions: [create_alarm, notify_qa, identify_affected_samples]
 
-  - rule_id: ENV_PRESSURE_WARNING
-    name: Clean Room Pressure Warning
-    asset_types: [environmental_sensor]
-    rooms: [R-STERILE, R-YANGXING, R-MICROBIO]
-    condition: "pressure > -8 AND pressure <= thresholds.pressure.max"
-    severity: WARNING
-    actions:
-      - create_alarm
-    message: "Room {room_id} pressure {value} Pa approaching alarm limit"
-
-  - rule_id: ENV_TEMP_EXCURSION
-    name: Clean Room Temperature Excursion
-    asset_types: [environmental_sensor]
-    rooms: [R-STERILE, R-YANGXING, R-MICROBIO]
-    condition: "temperature > thresholds.temperature.max OR temperature < thresholds.temperature.min"
-    severity: ALARM
-    actions:
-      - create_alarm
-      - notify_qa
-    message: "Room {room_id} temperature {value}°C out of range"
-
-  - rule_id: ENV_HUMIDITY_EXCURSION
-    name: Clean Room Humidity Excursion
-    asset_types: [environmental_sensor]
-    condition: "humidity > thresholds.humidity.max OR humidity < thresholds.humidity.min"
-    severity: WARNING
-    actions:
-      - create_alarm
-    message: "Room {room_id} humidity {value}% out of range"
+  - rule_id: AC_TEMP_EXCURSION
+    name: Autoclave Temperature Excursion
+    asset_types: [autoclave]
+    condition: "temperature < sterilize_min OR temperature > sterilize_max"
+    severity: CRITICAL
+    actions: [create_alarm, trigger_safe_state, notify_qa]
 
   - rule_id: SENSOR_FAILURE
     name: Sensor Data Timeout
     asset_types: [environmental_sensor, incubator, autoclave]
     condition: "last_reading_age_sec > 60"
     severity: CRITICAL
-    actions:
-      - create_alarm
-      - mark_sensor_failed
-      - notify_qa
-    message: "Sensor {asset_id} has not reported for {age}s — possible sensor failure"
+    actions: [create_alarm, mark_sensor_failed, notify_qa]
 
-  # ── Sample Workflow Rules ────────────────────────────────────
   - rule_id: SAMPLE_WORKFLOW_TIMEOUT
     name: Sample Workflow Step Timeout
-    asset_types: []
     entity_types: [sample]
-    condition: "step_age_hours > workflow.step.timeout_hours"
+    condition: "step_age_hours > timeout_hours"
     severity: ALARM
-    actions:
-      - create_alarm
-      - notify_qa
-      - block_workflow
-    message: "Sample {sample_id} has been in state {state} for {age}h (limit: {limit}h)"
-
-  - rule_id: REFRIGERATOR_TEMP_HIGH
-    name: Refrigerator Temperature High
-    asset_types: [refrigerator]
-    condition: "temperature > thresholds.temperature.alarm_max"
-    severity: ALARM
-    actions:
-      - create_alarm
-      - identify_affected_samples
-      - notify_qa
-    message: "Refrigerator {asset_id} temperature {value}°C exceeds {limit}°C"
-
+    actions: [create_alarm, notify_qa, block_workflow]
