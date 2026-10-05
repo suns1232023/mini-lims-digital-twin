@@ -1,1 +1,20 @@
 
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/suns1232023/mini-lims-digital-twin/contracts/workflow.json",
+  "title": "WorkflowInstance",
+  "type": "object",
+  "required": ["instance_id", "workflow_id", "entity_id", "current_state", "started_at"],
+  "properties": {
+    "instance_id":   { "type": "string" },
+    "workflow_id":   { "type": "string" },
+    "entity_id":     { "type": "string" },
+    "entity_type":   { "type": "string" },
+    "current_state": { "type": "string" },
+    "blocked":       { "type": "boolean" },
+    "block_reason":  { "type": ["string","null"] },
+    "started_at":    { "type": "string" },
+    "completed_at":  { "type": ["string","null"] },
+    "history":       { "type": "array", "items": { "type": "object" } }
+  }
+}
