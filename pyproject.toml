@@ -41,6 +41,7 @@ python_version = "3.11"
 ignore_missing_imports = true
 explicit_package_bases = true
 warn_return_any = false
+exclude = ["simulation/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
