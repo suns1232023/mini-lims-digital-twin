@@ -29,7 +29,7 @@ class SimulationReport:
         self.passed: bool = False
 
     def add_event(self, event_type: str, asset_id: str,
-                  payload: Optional[dict] = None, severity: str = "INFO") -> None:
+                  payload: dict[str, Any] | None = None, severity: str = "INFO") -> None:
         self.event_sequence.append({
             "ts": utcnow(), "event_type": event_type,
             "asset_id": asset_id, "severity": severity,
@@ -92,7 +92,7 @@ class ScenarioEngine:
         "I": "Recovery after failure",
     }
 
-    def run(self, scenario_id: str, params: Optional[dict] = None, seed: int = 42) -> SimulationReport:
+    def run(self, scenario_id: str, params: dict[str, Any] | None = None, seed: int = 42) -> SimulationReport:
         name = self.SCENARIOS.get(scenario_id, "Scenario " + scenario_id)
         report = SimulationReport(scenario_id=scenario_id, scenario_name=name, seed=seed)
         params = params or {}
