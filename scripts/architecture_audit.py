@@ -11,9 +11,6 @@ def run_audit():
         with open(arch_path) as f:
             arch = yaml.safe_load(f)
 
-        total_weight = 0
-        achieved_score = 0
-
         # 1. Check Domains & Required Files
         domains = arch.get("domains", [])
         total_files = 0
