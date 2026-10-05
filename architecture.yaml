@@ -1,0 +1,326 @@
+
+# Mini-LIMS Digital Twin Platform — Machine-Readable Architecture Contract
+# This file is the authoritative source for architecture validation.
+# scripts/architecture_audit.py reads this file to compute health scores.
+
+version: "1.0.0"
+project:
+  name: mini-lims-digital-twin
+  description: Microbiology Laboratory Digital Twin Platform
+  repository: https://github.com/suns1232023/mini-lims-digital-twin
+  python_min: "3.11"
+  philosophy: "MODEL → IMPLEMENT → TEST → SIMULATE → AUDIT → REVIEW → IMPROVE"
+
+# ── Domain Definitions ────────────────────────────────────────────────────────
+domains:
+  - id: twin
+    path: twin/
+    responsibility: Digital Twin state engine — source of truth
+    required_files:
+      - twin/__init__.py
+      - twin/entities/__init__.py
+      - twin/entities/base.py
+      - twin/entities/incubator.py
+      - twin/entities/autoclave.py
+      - twin/entities/pass_box.py
+      - twin/registry/__init__.py
+      - twin/registry/asset_registry.py
+      - twin/schemas/__init__.py
+      - twin/schemas/events.py
+      - twin/states/__init__.py
+      - twin/states/machines.py
+
+  - id: simulation
+    path: simulation/
+    responsibility: Deterministic scenario execution engine
+    required_files:
+      - simulation/__init__.py
+      - simulation/scenarios/__init__.py
+      - simulation/scenarios/engine.py
+
+  - id: contracts
+    path: contracts/
+    responsibility: JSON Schema contracts for frontend/backend validation
+    required_files:
+      - contracts/asset.json
+      - contracts/event.json
+      - contracts/sample.json
+      - contracts/workflow.json
+      - contracts/simulation.json
+
+  - id: tests
+    path: tests/
+    responsibility: Automated test suite — validates actual system behavior
+    required_files:
+      - tests/__init__.py
+      - tests/unit/__init__.py
+      - tests/unit/test_state_machines.py
+      - tests/unit/test_event_model.py
+      - tests/unit/test_asset_registry.py
+      - tests/simulation/__init__.py
+      - tests/simulation/test_scenarios.py
+      - tests/integration/__init__.py
+      - tests/regression/__init__.py
+
+  - id: scripts
+    path: scripts/
+    responsibility: Architecture governance and audit tooling
+    required_files:
+      - scripts/architecture_audit.py
+
+  - id: config
+    path: config/
+    responsibility: Declarative configuration — assets, rooms, rules, thresholds
+    required_files:
+      - config/assets.yaml
+      - config/rooms.yaml
+      - config/rules.yaml
+      - config/thresholds.yaml
+
+  - id: ci
+    path: .github/workflows/
+    responsibility: GitHub Actions CI/CD pipelines
+    required_files:
+      - .github/workflows/test.yml
+      - .github/workflows/architecture.yml
+      - .github/workflows/simulation.yml
+      - .github/workflows/build.yml
+
+# ── Digital Twin Entities ─────────────────────────────────────────────────────
+entities:
+  - id: INC-01
+    name: 培养箱①
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity, door]
+    thresholds:
+      temperature: {min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0}
+      humidity: {min: 40.0, max: 80.0}
+
+  - id: INC-02
+    name: 培养箱②
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity, door]
+    thresholds:
+      temperature: {min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0}
+
+  - id: INC-03
+    name: 培养箱③
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity, door]
+    thresholds:
+      temperature: {min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0}
+
+  - id: INC-04
+    name: 培养箱④
+    type: incubator
+    room: R-CULTURE
+    sensors: [temperature, humidity, door]
+    thresholds:
+      temperature: {min: 35.0, max: 39.0, alarm_min: 34.0, alarm_max: 40.0}
+
+  - id: AC-01
+    name: 灭菌锅①
+    type: autoclave
+    room: R-STERILIZE
+    sensors: [temperature, pressure]
+    thresholds:
+      temperature: {sterilize_min: 120.0, sterilize_max: 122.0}
+      pressure: {sterilize_min: 1.0, sterilize_max: 1.2}
+
+  - id: AC-02
+    name: 灭菌锅②
+    type: autoclave
+    room: R-STERILIZE
+    sensors: [temperature, pressure]
+    thresholds:
+      temperature: {sterilize_min: 120.0, sterilize_max: 122.0}
+
+  - id: PB-01
+    name: 传递窗①
+    type: pass_box
+    room: R-BUFFER-1
+    adjacent_room: R-STERILE
+    sensors: [door_a, door_b, uv_status]
+    thresholds: {}
+
+  - id: PB-02
+    name: 传递窗②
+    type: pass_box
+    room: R-BUFFER-2
+    adjacent_room: R-YANGXING
+    sensors: [door_a, door_b, uv_status]
+    thresholds: {}
+
+  - id: PB-03
+    name: 传递窗③
+    type: pass_box
+    room: R-BUFFER-1
+    adjacent_room: R-MICROBIO
+    sensors: [door_a, door_b, uv_status]
+    thresholds: {}
+
+  - id: ENV-STERILE
+    name: 无菌室环境传感器
+    type: environmental_sensor
+    room: R-STERILE
+    sensors: [temperature, humidity, pressure]
+    thresholds:
+      pressure: {min: -20.0, max: -8.0, alarm_max: -5.0}
+      temperature: {min: 20.0, max: 25.0}
+      humidity: {min: 30.0, max: 65.0}
+
+  - id: ENV-YANGXING
+    name: 阳性对照室环境传感器
+    type: environmental_sensor
+    room: R-YANGXING
+    sensors: [temperature, humidity, pressure]
+    thresholds:
+      pressure: {min: -18.0, max: -5.0, alarm_max: -3.0}
+
+  - id: ENV-MICROBIO
+    name: 微生物操作室环境传感器
+    type: environmental_sensor
+    room: R-MICROBIO
+    sensors: [temperature, humidity, pressure]
+    thresholds:
+      pressure: {min: -15.0, max: -5.0, alarm_max: -3.0}
+
+# ── State Machines ────────────────────────────────────────────────────────────
+state_machines:
+  incubator:
+    states: [IDLE, LOADED, INCUBATING, COMPLETED, RELEASED, ERROR, SAFE_STATE]
+    initial: IDLE
+    transitions:
+      - {from: IDLE,       to: LOADED,     event: INCUBATOR_LOADED}
+      - {from: LOADED,     to: INCUBATING, event: INCUBATOR_INCUBATION_STARTED}
+      - {from: LOADED,     to: IDLE,       event: INCUBATOR_RESET}
+      - {from: INCUBATING, to: COMPLETED,  event: INCUBATOR_INCUBATION_COMPLETED}
+      - {from: INCUBATING, to: ERROR,      event: INCUBATOR_TEMPERATURE_EXCURSION}
+      - {from: COMPLETED,  to: RELEASED,   event: INCUBATOR_RELEASED}
+      - {from: RELEASED,   to: IDLE,       event: INCUBATOR_RESET}
+      - {from: ERROR,      to: SAFE_STATE, event: INCUBATOR_ALARM_ACKNOWLEDGED}
+      - {from: SAFE_STATE, to: IDLE,       event: INCUBATOR_RECOVERED}
+    error_states: [ERROR, SAFE_STATE]
+
+  autoclave:
+    states: [IDLE, LOADING, RUNNING, COOLING, COMPLETED, RELEASED, ERROR, SAFE_STATE, MAINTENANCE, VALIDATION]
+    initial: IDLE
+    transitions:
+      - {from: IDLE,        to: LOADING,     event: AUTOCLAVE_LOADING_STARTED}
+      - {from: LOADING,     to: RUNNING,     event: AUTOCLAVE_STARTED}
+      - {from: LOADING,     to: IDLE,        event: AUTOCLAVE_RESET}
+      - {from: RUNNING,     to: COOLING,     event: AUTOCLAVE_COOLING_STARTED}
+      - {from: RUNNING,     to: ERROR,       event: AUTOCLAVE_FAILED}
+      - {from: COOLING,     to: COMPLETED,   event: AUTOCLAVE_COMPLETED}
+      - {from: COMPLETED,   to: RELEASED,    event: AUTOCLAVE_RELEASED}
+      - {from: RELEASED,    to: IDLE,        event: AUTOCLAVE_RESET}
+      - {from: ERROR,       to: SAFE_STATE,  event: AUTOCLAVE_SAFE_STATE_ENTERED}
+      - {from: SAFE_STATE,  to: MAINTENANCE, event: AUTOCLAVE_MAINTENANCE_STARTED}
+      - {from: MAINTENANCE, to: VALIDATION,  event: AUTOCLAVE_VALIDATION_STARTED}
+      - {from: VALIDATION,  to: RELEASED,    event: AUTOCLAVE_VALIDATION_PASSED}
+    error_states: [ERROR, SAFE_STATE, MAINTENANCE, VALIDATION]
+
+  pass_box:
+    states: [IDLE, LOCKED, UV_DISINFECTING, OPEN, TRANSFERRING, CLOSED, INTERLOCK_ALARM]
+    initial: IDLE
+    transitions:
+      - {from: IDLE,            to: LOCKED,          event: TRANSFER_WINDOW_LOCKED}
+      - {from: LOCKED,          to: UV_DISINFECTING, event: TRANSFER_WINDOW_UV_STARTED}
+      - {from: LOCKED,          to: IDLE,            event: TRANSFER_WINDOW_RESET}
+      - {from: UV_DISINFECTING, to: OPEN,            event: TRANSFER_WINDOW_OPENED}
+      - {from: OPEN,            to: TRANSFERRING,    event: SAMPLE_MOVED}
+      - {from: OPEN,            to: INTERLOCK_ALARM, event: TRANSFER_WINDOW_INTERLOCK_VIOLATED}
+      - {from: TRANSFERRING,    to: CLOSED,          event: TRANSFER_WINDOW_CLOSED}
+      - {from: CLOSED,          to: IDLE,            event: TRANSFER_WINDOW_RESET}
+      - {from: INTERLOCK_ALARM, to: IDLE,            event: ALARM_ACKNOWLEDGED}
+    error_states: [INTERLOCK_ALARM]
+
+  sample:
+    states: [REGISTERED, RECEIVED, PREPARED, TESTING, INCUBATING, READING, REVIEW, APPROVED, REJECTED, REPORTED, ARCHIVED]
+    initial: REGISTERED
+    transitions:
+      - {from: REGISTERED, to: RECEIVED,   event: SAMPLE_RECEIVED,   timeout_hours: 24}
+      - {from: RECEIVED,   to: PREPARED,   event: SAMPLE_PREPARED,   timeout_hours: 4}
+      - {from: PREPARED,   to: TESTING,    event: SAMPLE_TESTING_STARTED, timeout_hours: 2}
+      - {from: TESTING,    to: INCUBATING, event: SAMPLE_INCUBATION_STARTED, timeout_hours: 1}
+      - {from: TESTING,    to: REJECTED,   event: SAMPLE_REJECTED}
+      - {from: INCUBATING, to: READING,    event: SAMPLE_INCUBATION_COMPLETED, timeout_hours: 168}
+      - {from: READING,    to: REVIEW,     event: SAMPLE_READING_COMPLETED, timeout_hours: 2}
+      - {from: REVIEW,     to: APPROVED,   event: SAMPLE_APPROVED,   timeout_hours: 8}
+      - {from: REVIEW,     to: REJECTED,   event: SAMPLE_REJECTED,   timeout_hours: 8}
+      - {from: APPROVED,   to: REPORTED,   event: SAMPLE_REPORTED,   timeout_hours: 4}
+      - {from: REPORTED,   to: ARCHIVED,   event: SAMPLE_ARCHIVED}
+      - {from: REJECTED,   to: PREPARED,   event: SAMPLE_RETEST_INITIATED, timeout_hours: 24}
+    error_states: [REJECTED]
+
+# ── Simulation Scenarios ──────────────────────────────────────────────────────
+simulation_scenarios:
+  - id: A
+    name: Normal laboratory operation
+    expected_alarms: 0
+    expected_transitions: {min: 4}
+  - id: B
+    name: Incubator temperature excursion
+    expected_alarms: {min: 1}
+    expected_severity: ALARM
+    expected_error_state: ERROR
+  - id: C
+    name: Pass-box interlock violation
+    expected_alarms: {min: 1}
+    expected_severity: CRITICAL
+    expected_error_state: INTERLOCK_ALARM
+  - id: D
+    name: Autoclave failure
+    expected_alarms: {min: 1}
+    expected_severity: CRITICAL
+    expected_error_state: ERROR
+  - id: E
+    name: Sensor failure
+    expected_alarms: {min: 1}
+    expected_severity: CRITICAL
+  - id: F
+    name: Environmental excursion
+    expected_alarms: {min: 1}
+    expected_severity: ALARM
+  - id: G
+    name: Sample workflow timeout
+    expected_alarms: {min: 1}
+    expected_severity: ALARM
+  - id: H
+    name: Equipment unavailable
+    expected_alarms: {min: 1}
+    expected_severity: WARNING
+  - id: I
+    name: Recovery after failure
+    expected_alarms: 0
+    expected_recovery: true
+
+# ── Quality Gates ─────────────────────────────────────────────────────────────
+quality_gates:
+  architecture_score_min: 70
+  critical_issues_max: 0
+  required_test_files:
+    - tests/unit/test_state_machines.py
+    - tests/unit/test_event_model.py
+    - tests/unit/test_asset_registry.py
+    - tests/simulation/test_scenarios.py
+  required_contracts:
+    - contracts/asset.json
+    - contracts/event.json
+    - contracts/sample.json
+    - contracts/workflow.json
+    - contracts/simulation.json
+
+# ── Architecture Constraints ──────────────────────────────────────────────────
+constraints:
+  - UI must not contain business logic
+  - Digital Twin state must be independent of frontend
+  - All state transitions must generate traceable events
+  - Rules must be declarative (config/rules.yaml)
+  - Thresholds must not be hard-coded in source files
+  - Architecture health score must be computed dynamically
+  - No local absolute paths in any source file
+  - No hard-coded credentials or secrets
