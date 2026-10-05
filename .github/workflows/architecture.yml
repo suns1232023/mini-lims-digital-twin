@@ -11,8 +11,9 @@ jobs:
     name: Architecture Health Check
     runs-on: ubuntu-latest
     steps:
-    
-          - name: Set up Python 3.11
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -40,7 +41,7 @@ jobs:
               print('FAIL: Critical architecture issues found')
               sys.exit(1)
           if h['architecture_score'] < 70:
-              print(f'FAIL: Score below minimum 70')
+              print('FAIL: Score below minimum 70')
               sys.exit(1)
           print('PASS: Architecture health check passed')
           "
