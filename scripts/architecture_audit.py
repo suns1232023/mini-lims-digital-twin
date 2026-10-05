@@ -1,8 +1,7 @@
-# scripts/architecture_audit.py
 import json
-import os
 from pathlib import Path
 import yaml
+
 
 def run_audit():
     arch_path = Path("architecture.yaml")
@@ -11,10 +10,10 @@ def run_audit():
     else:
         with open(arch_path) as f:
             arch = yaml.safe_load(f)
-        
+
         total_weight = 0
         achieved_score = 0
-        
+
         # 1. Check Domains & Required Files
         domains = arch.get("domains", [])
         total_files = 0
@@ -24,14 +23,14 @@ def run_audit():
                 total_files += 1
                 if Path(req_file).exists():
                     existing_files += 1
-        
+
         # Calculate score dynamically
         domain_ratio = (existing_files / total_files) if total_files > 0 else 0
         domain_score = int(domain_ratio * 30)
-        
+
         # Combine checks (yaml, tests, contracts, domain files, etc.)
         score = domain_score + 54  # Base checks passed score
-    
+
     report = {
         "architecture_score": score,
         "raw_score": score,
@@ -39,11 +38,12 @@ def run_audit():
         "issues": 0,
         "warnings": 0,
         "critical": 0,
-        "note": "Computed dynamically by architecture_audit.py"
+        "note": "Computed dynamically by architecture_audit.py",
     }
-    
+
     with open("architecture-health.json", "w") as f:
         json.dump(report, f, indent=2)
+
 
 if __name__ == "__main__":
     run_audit()
